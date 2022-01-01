@@ -1,6 +1,6 @@
 
 use nom::{
-    character::{complete::{space1, line_ending, char, digit1, none_of}, complete::anychar}, branch::alt, combinator::{map, value}, IResult, bytes::{complete::{tag, escaped_transform}, complete::take_while1}, number::complete::double, sequence::delimited
+    character::{complete::{space1, line_ending, char, digit1}, complete::anychar}, branch::alt, combinator::{map, value}, IResult, bytes::{complete::{tag, escaped_transform}, complete::take_while1}, number::complete::double, sequence::delimited
 };
 
 /**
@@ -16,7 +16,8 @@ pub enum Token {
     RightCurlyBracket, // }
     Plus, // +
     Minus, // -
-    FunctionDeclaration, // def
+    Define, // def
+    Return, // return
     Assign, // =
     IntLiteral(i64), // 1
     FloatLiteral(f64), // 3.14
@@ -46,7 +47,8 @@ pub fn parse_token(input: &str) -> IResult<&str, Token> {
         map(char('}'), token!(Token::RightCurlyBracket)),
         map(char('+'), token!(Token::Plus)),
         map(char('-'), token!(Token::Minus)),
-        map(tag("def"), token!(Token::FunctionDeclaration)),
+        map(tag("def"), token!(Token::Define)),
+        map(tag("returrn"), token!(Token::Return)),
         map(char('='), token!(Token::Assign)),
         map(double, |d| Token::FloatLiteral(d)),
         map(digit1, resolve_int_literal),
