@@ -1,6 +1,6 @@
 
 use nom::{
-    character::{streaming::{space1, line_ending, char, digit1}, streaming::anychar}, branch::alt, combinator::{map, value, eof}, IResult, bytes::{streaming::{tag, escaped_transform}, streaming::take_while1}, number::streaming::double, sequence::delimited
+    character::{streaming::{space1, line_ending, char, digit1}, streaming::anychar}, branch::alt, combinator::{map, eof}, IResult, bytes::{streaming::tag, streaming::take_while1}, number::streaming::double
 };
 
 use super::string_parser::parse_string;

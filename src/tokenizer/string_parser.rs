@@ -1,6 +1,6 @@
 /// Inspired by https://github.com/Geal/nom/blob/main/examples/string.rs
 
-use nom::{sequence::{delimited, preceded}, character::streaming::{char, multispace1}, IResult, multi::fold_many0, branch::alt, combinator::{map, verify, value, map_res, map_opt}, bytes::streaming::{is_not, tag, take_while_m_n}};
+use nom::{sequence::{delimited, preceded}, character::streaming::{char, multispace1}, IResult, multi::fold_many0, branch::alt, combinator::{map, verify, value, map_res, map_opt}, bytes::streaming::{is_not, take_while_m_n}};
 
 /// Parses a string literal from the input
 pub fn parse_string(input: &str) -> IResult<&str, String> {
