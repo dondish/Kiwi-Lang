@@ -10,7 +10,7 @@ use super::string_parser::parse_string;
  * 
  * They represent the lowest level of the scripting language
  */
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Space,
     NewLine,
@@ -20,6 +20,7 @@ pub enum Token {
     RightParen, // )
     Plus, // +
     Minus, // -
+    ExclamationMark, // !
     Define, // def
     Return, // return
     Assign, // =
@@ -57,6 +58,7 @@ pub fn parse_token(input: &str) -> IResult<&str, Token> {
         map(char(')'), token!(Token::RightParen)),
         map(char('+'), token!(Token::Plus)),
         map(char('-'), token!(Token::Minus)),
+        map(char('!'), token!(Token::ExclamationMark)),
         map(tag("def"), token!(Token::Define)),
         map(tag("return"), token!(Token::Return)),
         map(char('='), token!(Token::Assign)),
