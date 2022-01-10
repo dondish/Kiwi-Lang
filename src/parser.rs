@@ -569,7 +569,8 @@ mod tests {
                         ]
                     }
                 )
-            )
+            ),
+            "Failed Expression in function call: f a + b"
         )
     }
 }
