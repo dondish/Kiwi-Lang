@@ -307,7 +307,7 @@ fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
 
 #[cfg(test)]
 mod tests {
-    use crate::tokenizer::Token;
+    use crate::{tokenizer::Token, parser::UnaryExpressionType};
 
     use super::{build_expression, ASTBuildState, ASTNode};
 
@@ -338,7 +338,7 @@ mod tests {
                     }
                 )
             ),
-            "Testing basic expression a + b"
+            "Failed basic expression a + b"
         );
     }
 
@@ -368,8 +368,33 @@ mod tests {
                         ]
                     }
                 )
-            )
+            ),
+            "Failed basic function call: print \"Hello World!\""
         )
+    }
 
+    #[test]
+    /// Test basic unary operator: !1
+    fn basic_unary_operator() {
+        let tokens = vec![Token::ExclamationMark, Token::IntLiteral(1)];
+        let mut build_state = ASTBuildState::new(&tokens);
+        let expression = build_expression(&mut build_state);
+
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::UnaryExpression {
+                        expression_type: UnaryExpressionType::Not,
+                        argument: Box::new(
+                            ASTNode::Literal(
+                                Token::IntLiteral(1)
+                            )
+                        )
+                    }
+                )
+            ),
+            "Failed basic unary operator: !1"
+        )
     }
 }
