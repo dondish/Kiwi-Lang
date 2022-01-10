@@ -341,7 +341,7 @@ mod tests {
     #[test]
     /// Tests basic function call: print "Hello World!"
     fn basic_function_call() {
-        let expression = get_expression_from_tokens(&vec![Token::Identifier("print".to_string()), Token::StringLiteral("Hello World!".to_string())]);
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("print".to_string()), Token::Space, Token::StringLiteral("Hello World!".to_string())]);
 
         assert_eq!(
             expression,
@@ -498,6 +498,45 @@ mod tests {
                         )
                     }
 
+                )
+            ),
+            "Failed nested function call: a + (f b)"
+        )
+    }
+
+    #[test]
+    /// Expression in function call: f a + b
+    fn expression_in_function_call() {
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("f".to_string()), Token::Space, Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]);
+
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::FunctionCall {
+                        function: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("f".to_string())
+                            )
+                        ),
+                        function_arguments: vec![
+                            Box::new(
+                                ASTNode::BinaryExpression {
+                                    expression_type: BinaryExpressionType::Add,
+                                    left_argument: Box::new(
+                                        ASTNode::Identifier(
+                                            Token::Identifier("a".to_string())
+                                        )
+                                    ),
+                                    right_argument: Box::new(
+                                        ASTNode::Identifier(
+                                            Token::Identifier("b".to_string())
+                                        )
+                                    )
+                                }
+                            )
+                        ]
+                    }
                 )
             )
         )
