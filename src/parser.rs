@@ -15,12 +15,15 @@ pub enum UnaryExpressionType {
 }
 
 impl <'a> TryFrom<&'a Token> for UnaryExpressionType {
-    type Error = &'static str;
+    type Error = ParserError;
 
     fn try_from(token: &'a Token) -> Result<Self, Self::Error> {
         match token {
             Token::ExclamationMark => Ok(UnaryExpressionType::Not),
-            _ => Err("Invalid token")
+            _ =>  Err(ParserError{
+                kind: ParserErrorKind::InvalidUnaryOperatorToken,
+                token: token.to_owned()
+            })
         }
     }
 }
@@ -34,7 +37,7 @@ pub enum BinaryExpressionType {
 }
 
 impl BinaryExpressionType {
-    fn get_associativity(self: &Self) -> Associativity {
+    pub fn get_associativity(self: &Self) -> Associativity {
         match self {
             BinaryExpressionType::Add => Associativity::LeftToRight,
             BinaryExpressionType::Subtract => Associativity::LeftToRight,
@@ -44,14 +47,17 @@ impl BinaryExpressionType {
 }
 
 impl <'a> TryFrom<&'a Token> for BinaryExpressionType {
-    type Error = &'static str;
+    type Error = ParserError;
 
     fn try_from(token: &'a Token) -> Result<Self, Self::Error> {
         match token {
             Token::Plus => Ok(BinaryExpressionType::Add),
             Token::Minus => Ok(BinaryExpressionType::Subtract),
             Token::Assign => Ok(BinaryExpressionType::Assign),
-            _ => Err("Invalid token")
+            _ => Err(ParserError{
+                kind: ParserErrorKind::InvalidBinaryOperatorToken,
+                token: token.to_owned()
+            })
         }
     }
 }
@@ -83,18 +89,33 @@ struct ASTBuildState<'a> {
 
 impl <'a> ASTBuildState<'a> {
 
-    fn new(tokens: &Vec<Token>) -> ASTBuildState {
+    pub fn new(tokens: &Vec<Token>) -> ASTBuildState {
         ASTBuildState { root_nodes: vec![], tokens: &tokens, current_index: 0 }
     }
 
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ParserErrorKind {
+    UnexpectedToken,
+    EmptyExpression,
+    InvalidNumberOfOperatorParameters,
+    InvalidUnaryOperatorToken,
+    InvalidBinaryOperatorToken
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ParserError {
+    kind: ParserErrorKind,
+    token: Token
+}
+
 /// Builds the ast
-pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, &'static str> {
+pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, ParserError> {
     let mut build_state = ASTBuildState::new(tokens);
 
     while build_state.current_index < tokens.len() {
-        match tokens[build_state.current_index] {
+        match &tokens[build_state.current_index] {
             Token::Space | Token::NewLine => build_state.current_index += 1,
             Token::Identifier(_)  => {
                 let statement = build_statement(&mut build_state)?;
@@ -106,7 +127,10 @@ pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, &'static str> {
                 build_state.root_nodes.push(function_definition);
             }
             ,
-            _ => return Err("Failed parsing at token")
+            token @ _ => return Err(ParserError { 
+                kind: ParserErrorKind::UnexpectedToken,
+                token: token.to_owned()
+            })
         }
     }
 
@@ -114,12 +138,12 @@ pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, &'static str> {
 }
 
 /// Builds an expression
-fn build_expression(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'static str> {
+fn build_expression(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
     build_expression_recursive(build_state, false)
 }
 
 /// Builds an expression which may be a function call
-fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
+fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, ParserError> {
     let mut expression_fragments: Vec<Vec<Token>> = vec![vec![]];
     let mut was_last_operator = true;
 
@@ -160,7 +184,10 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
                 if in_parens {
                     break;
                 } else {
-                    return Err("Unexpected )")
+                    return Err(ParserError{
+                        kind: ParserErrorKind::UnexpectedToken,
+                        token: current_token.to_owned()
+                    })
                 }
             },
             Token::Space => {
@@ -189,7 +216,7 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
                 .iter()
                 .skip(1)
                 .map(|tokens| build_non_function_call_expression(&mut ASTBuildState::new(tokens), in_parens))
-                .collect::<Result<Vec<Box<ASTNode>>, &'static str>>()?
+                .collect::<Result<Vec<Box<ASTNode>>, ParserError>>()?
         }))
     } else {
         build_non_function_call_expression(&mut ASTBuildState::new(&expression_fragments[0]), in_parens)
@@ -199,7 +226,7 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
 
 /// Builds non expressions which are not function calls (can include one in parens)
 /// Uses the shunting yard algorithm
-fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
+fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, ParserError> {
     let mut expr_stack: Vec<Box<ASTNode>> = vec![];
     let mut operator_stack: Vec<Box<Token>> = vec![];
     
@@ -223,10 +250,16 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
                 if in_parens {
                     break;
                 }
-                return Err("Unexpected )");
+                return Err(ParserError{
+                    kind: ParserErrorKind::UnexpectedToken,
+                    token: current_token.to_owned()
+                });
             },
             Token::Space => {},
-            _ => return Err("Invalid token")
+            _ => return Err(ParserError{
+                kind: ParserErrorKind::UnexpectedToken,
+                token: current_token.to_owned()
+            })
         }
         
         build_state.current_index += 1;
@@ -236,10 +269,13 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
         push_operation_to_expr_stack(stack_top.as_ref(), &mut expr_stack)?;
     }
 
-    expr_stack.pop().ok_or("No expressions")
+    expr_stack.pop().ok_or(ParserError{
+                    kind: ParserErrorKind::EmptyExpression,
+                    token: Token::Eof
+    })
 }
 
-fn shunting_yard_look_for_lower_precedence(current_token: &Token, operator_stack: &mut Vec<Box<Token>>, expr_stack: &mut Vec<Box<ASTNode>>) -> Result<(), &'static str>{
+fn shunting_yard_look_for_lower_precedence(current_token: &Token, operator_stack: &mut Vec<Box<Token>>, expr_stack: &mut Vec<Box<ASTNode>>) -> Result<(), ParserError>{
     while let Some(stack_top) = operator_stack.pop() {
         if 
             get_operator_precedence(stack_top.as_ref()) < get_operator_precedence(current_token) // If incoming operator has a higher precedence or has the same precedence and is right associative 
@@ -256,10 +292,16 @@ fn shunting_yard_look_for_lower_precedence(current_token: &Token, operator_stack
     Ok(())
 }
 
-fn push_operation_to_expr_stack(operator: &Token, expr_stack: &mut Vec<Box<ASTNode>>) -> Result<(), &'static str> {
+fn push_operation_to_expr_stack(operator: &Token, expr_stack: &mut Vec<Box<ASTNode>>) -> Result<(), ParserError> {
     if BinaryExpressionType::try_from(operator).is_ok() {
-        let right_expr = expr_stack.pop().ok_or("No expressions for operator")?;
-        let left_expr = expr_stack.pop().ok_or("No expressions for operator")?;
+        let right_expr = expr_stack.pop().ok_or(ParserError{
+            kind: ParserErrorKind::InvalidNumberOfOperatorParameters,
+            token: operator.to_owned()
+        })?;
+        let left_expr = expr_stack.pop().ok_or(ParserError{
+            kind: ParserErrorKind::InvalidNumberOfOperatorParameters,
+            token: operator.to_owned()
+        })?;
 
         expr_stack.push(Box::new(ASTNode::BinaryExpression{ 
             expression_type: operator.try_into()?, 
@@ -267,7 +309,10 @@ fn push_operation_to_expr_stack(operator: &Token, expr_stack: &mut Vec<Box<ASTNo
             right_argument: right_expr
         }));
     } else if UnaryExpressionType::try_from(operator).is_ok() {
-        let expr = expr_stack.pop().ok_or("No expressions for operator")?;
+        let expr = expr_stack.pop().ok_or(ParserError{
+            kind: ParserErrorKind::InvalidNumberOfOperatorParameters,
+            token: operator.to_owned()
+        })?;
 
         expr_stack.push(Box::new(ASTNode::UnaryExpression {
             expression_type: operator.try_into()?,
@@ -310,13 +355,13 @@ fn is_expression_terminal_token(token: &Token) -> bool {
 }
 
 /// Builds an AST statement 
-fn build_statement(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'static str> {
-    Err("Unimplemented")
+fn build_statement(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
+    unimplemented!();
 }
 
 /// Builds an AST function
-fn build_function(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'static str> {
-    Err("Unimplemented")
+fn build_function(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
+    unimplemented!();
 }
 
 /// Increments the build state's index until it no longer points on a white-space token
@@ -334,9 +379,9 @@ fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
 mod tests {
     use crate::{tokenizer::Token, parser::{UnaryExpressionType, BinaryExpressionType}};
 
-    use super::{build_expression, ASTBuildState, ASTNode};
+    use super::{build_expression, ASTBuildState, ASTNode, ParserError};
 
-    fn get_expression_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, &'static str> {
+    fn get_expression_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, ParserError> {
         let mut build_state = ASTBuildState::new(&tokens);
         build_expression(&mut build_state)
     }
