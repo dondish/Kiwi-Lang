@@ -178,6 +178,7 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
 }
 
 /// Builds non expressions which are not function calls (can include one in parens)
+/// Uses the shunting yard algorithm
 fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
     let mut expr_stack: Vec<Box<ASTNode>> = vec![];
     let mut operator_stack: Vec<Box<Token>> = vec![];
@@ -433,9 +434,41 @@ mod tests {
                         )
                     }
                 )
-            )
+            ),
+            "Failed basic nested expression: a + b - c"
         )
+    }
 
+    #[test]
+    /// Basic operator precedence: a + !b
+    fn basic_operator_precedence() {
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("a".to_string()), Token::Plus, Token::ExclamationMark, Token::Identifier("b".to_string())]);
 
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::BinaryExpression {
+                        expression_type: BinaryExpressionType::Add,
+                        left_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("a".to_string())
+                            )
+                        ),
+                        right_argument: Box::new(
+                            ASTNode::UnaryExpression {
+                                expression_type: UnaryExpressionType::Not,
+                                argument: Box::new(
+                                    ASTNode::Identifier(
+                                        Token::Identifier("b".to_string())
+                                    )
+                                )
+                            }
+                        )
+                    }
+                )
+            ),
+            "Failed basic operator precedence: a + !b"
+        )
     }
 }
