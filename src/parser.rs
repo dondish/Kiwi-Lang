@@ -628,7 +628,8 @@ mod tests {
                         )
                     }
                 )
-            )
+            ),
+            "Failed nested parenthesis: (a+b+(c-d))+e"
         )
     }
 }
