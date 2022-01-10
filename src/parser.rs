@@ -69,6 +69,7 @@ pub enum ASTNode {
 }
 
 /// An Abstract Syntax Tree
+#[derive(Debug)]
 pub struct AST {
     root_nodes: Vec<Box<ASTNode>>
 }
@@ -153,7 +154,7 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
                     }
                     build_state.current_index += 1;
                 }
-                break;
+                continue;
             }
             Token::RightParen => {
                 if in_parens {
@@ -571,6 +572,63 @@ mod tests {
                 )
             ),
             "Failed Expression in function call: f a + b"
+        )
+    }
+
+    #[test]
+    /// Nested parenthesis: (a+b+(c-d))+e
+    fn nested_parenthesis() {
+        let expression = get_expression_from_tokens(&vec![Token::LeftParen, Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string()), Token::Plus, Token::LeftParen, Token::Identifier("c".to_string()), Token::Minus, Token::Identifier("d".to_string()), Token::RightParen, Token::RightParen, Token::Plus, Token::Identifier("e".to_string())]);
+    
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::BinaryExpression {
+                        expression_type: BinaryExpressionType::Add,
+                        left_argument: Box::new(
+                            ASTNode::BinaryExpression {
+                                expression_type: BinaryExpressionType::Add,
+                                left_argument: Box::new(
+                                    ASTNode::BinaryExpression {
+                                        expression_type: BinaryExpressionType::Add,
+                                        left_argument: Box::new(
+                                            ASTNode::Identifier(
+                                                Token::Identifier("a".to_string())
+                                            )
+                                        ),
+                                        right_argument: Box::new(
+                                            ASTNode::Identifier(
+                                                Token::Identifier("b".to_string())
+                                            )
+                                        )
+                                    }
+                                ),
+                                right_argument: Box::new(
+                                    ASTNode::BinaryExpression {
+                                        expression_type: BinaryExpressionType::Subtract,
+                                        left_argument: Box::new(
+                                            ASTNode::Identifier(
+                                                Token::Identifier("c".to_string())
+                                            )
+                                        ),
+                                        right_argument: Box::new(
+                                            ASTNode::Identifier(
+                                                Token::Identifier("d".to_string())
+                                            )
+                                        )
+                                    }
+                                )
+                            }
+                        ),
+                        right_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("e".to_string())
+                            )
+                        )
+                    }
+                )
+            )
         )
     }
 }

@@ -36,8 +36,13 @@ fn main() {
     
         print string
     }"#).unwrap();
-    let ast = build_ast(&tokens);
+    let ast = build_ast(&tokens).unwrap();
 
 
+    println!("------------- Tokens -------------");
     println!("{:?}", tokens);
+    println!();
+    println!();
+    println!("------------- AST -------------");
+    println!("{:?}", ast);
 }
