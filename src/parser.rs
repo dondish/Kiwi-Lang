@@ -190,29 +190,7 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
             Token::FloatLiteral(_) | Token::IntLiteral(_) | Token::StringLiteral(_) => expr_stack.push(Box::new(ASTNode::Literal(current_token.to_owned()))),
             Token::Identifier(_) => expr_stack.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
             Token::Plus | Token::Minus | Token::ExclamationMark => {
-                while let Some(stack_top) = operator_stack.pop() {
-                    if get_operator_precedence(&stack_top) < get_operator_precedence(current_token) {
-                        operator_stack.push(stack_top);
-                        break;
-                    }
-                    if BinaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
-                        let right_expr = expr_stack.pop().ok_or("No expressions for operator")?;
-                        let left_expr = expr_stack.pop().ok_or("No expressions for operator")?;
-
-                        expr_stack.push(Box::new(ASTNode::BinaryExpression{ 
-                            expression_type: stack_top.as_ref().try_into()?, 
-                            left_argument: left_expr, 
-                            right_argument: right_expr
-                        }));
-                    } else if UnaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
-                        let expr = expr_stack.pop().ok_or("No expressions for operator")?;
-
-                        expr_stack.push(Box::new(ASTNode::UnaryExpression {
-                            expression_type: stack_top.as_ref().try_into()?,
-                            argument: expr
-                        }));
-                    }
-                }
+                shunting_yard_look_for_lower_precedence(current_token, &mut operator_stack, &mut expr_stack)?;
                 operator_stack.push(Box::new(current_token.to_owned()));
             }
             Token::LeftParen => {
@@ -238,28 +216,43 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
     }
 
     while let Some(stack_top) = operator_stack.pop() {
-        if BinaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
-            let right_expr = expr_stack.pop().ok_or("No expressions for operator")?;
-            let left_expr = expr_stack.pop().ok_or("No expressions for operator")?;
-
-            expr_stack.push(Box::new(ASTNode::BinaryExpression{ 
-                expression_type: stack_top.as_ref().try_into()?, 
-                left_argument: left_expr, 
-                right_argument: right_expr
-            }));
-        } else if UnaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
-            let expr = expr_stack.pop().ok_or("No expressions for operator")?;
-
-            expr_stack.push(Box::new(ASTNode::UnaryExpression {
-                expression_type: UnaryExpressionType::try_from(stack_top.as_ref())?,
-                argument: expr
-            }));
-        }
+        push_operation_to_expr_stack(stack_top.as_ref(), &mut expr_stack)?;
     }
 
-
-
     expr_stack.pop().ok_or("No expressions")
+}
+
+fn shunting_yard_look_for_lower_precedence(current_token: &Token, operator_stack: &mut Vec<Box<Token>>, expr_stack: &mut Vec<Box<ASTNode>>) -> Result<(), &'static str>{
+    while let Some(stack_top) = operator_stack.pop() {
+        if get_operator_precedence(stack_top.as_ref()) < get_operator_precedence(current_token) {
+            operator_stack.push(stack_top);
+            break;
+        }
+
+        push_operation_to_expr_stack(stack_top.as_ref(), expr_stack)?;
+    }
+    Ok(())
+}
+
+fn push_operation_to_expr_stack(operator: &Token, expr_stack: &mut Vec<Box<ASTNode>>) -> Result<(), &'static str> {
+    if BinaryExpressionType::try_from(operator).is_ok() {
+        let right_expr = expr_stack.pop().ok_or("No expressions for operator")?;
+        let left_expr = expr_stack.pop().ok_or("No expressions for operator")?;
+
+        expr_stack.push(Box::new(ASTNode::BinaryExpression{ 
+            expression_type: operator.try_into()?, 
+            left_argument: left_expr, 
+            right_argument: right_expr
+        }));
+    } else if UnaryExpressionType::try_from(operator).is_ok() {
+        let expr = expr_stack.pop().ok_or("No expressions for operator")?;
+
+        expr_stack.push(Box::new(ASTNode::UnaryExpression {
+            expression_type: operator.try_into()?,
+            argument: expr
+        }));
+    }
+    Ok(())
 }
 
 /// Returns the precedence of an operator
