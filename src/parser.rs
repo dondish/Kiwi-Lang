@@ -2,6 +2,12 @@ use std::vec;
 
 use crate::tokenizer::Token;
 
+#[derive(Debug, PartialEq)]
+pub enum Associativity {
+    LeftToRight,
+    RightToLeft
+}
+
 /// Unary Expression Type like ! and ~
 #[derive(Debug, PartialEq)]
 pub enum UnaryExpressionType {
@@ -23,7 +29,18 @@ impl <'a> TryFrom<&'a Token> for UnaryExpressionType {
 #[derive(Debug, PartialEq)]
 pub enum BinaryExpressionType {
     Add, // +
-    Subtract // -
+    Subtract, // -
+    Assign // =
+}
+
+impl BinaryExpressionType {
+    fn get_associativity(self: &Self) -> Associativity {
+        match self {
+            BinaryExpressionType::Add => Associativity::LeftToRight,
+            BinaryExpressionType::Subtract => Associativity::LeftToRight,
+            BinaryExpressionType::Assign => Associativity::RightToLeft
+        }
+    }
 }
 
 impl <'a> TryFrom<&'a Token> for BinaryExpressionType {
@@ -33,6 +50,7 @@ impl <'a> TryFrom<&'a Token> for BinaryExpressionType {
         match token {
             Token::Plus => Ok(BinaryExpressionType::Add),
             Token::Minus => Ok(BinaryExpressionType::Subtract),
+            Token::Assign => Ok(BinaryExpressionType::Assign),
             _ => Err("Invalid token")
         }
     }
@@ -45,7 +63,6 @@ pub enum ASTNode {
     Identifier(Token), // An identifier
     UnaryExpression { expression_type: UnaryExpressionType, argument: Box<ASTNode> }, // A unary expression
     BinaryExpression { expression_type: BinaryExpressionType, left_argument: Box<ASTNode>, right_argument: Box<ASTNode>}, // A binary expression
-    AssignExpression { assignee: Box<ASTNode>, value: Box<ASTNode> }, // Assignment expression
     FunctionCall { function: Box<ASTNode>, function_arguments: Vec<Box<ASTNode>>}, // Function call
     CodeBlock { lines: Vec<Box<ASTNode>> }, // Multiple Statements
     FunctionDefinition { function_name: Box<ASTNode>, function_arguments: Vec<Box<ASTNode>>, function_code: Box<ASTNode>}
@@ -193,7 +210,7 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
         match current_token {
             Token::FloatLiteral(_) | Token::IntLiteral(_) | Token::StringLiteral(_) => expr_stack.push(Box::new(ASTNode::Literal(current_token.to_owned()))),
             Token::Identifier(_) => expr_stack.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
-            Token::Plus | Token::Minus | Token::ExclamationMark => {
+            Token::Plus | Token::Minus | Token::ExclamationMark | Token::Assign => {
                 shunting_yard_look_for_lower_precedence(current_token, &mut operator_stack, &mut expr_stack)?;
                 operator_stack.push(Box::new(current_token.to_owned()));
             }
@@ -223,7 +240,12 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
 
 fn shunting_yard_look_for_lower_precedence(current_token: &Token, operator_stack: &mut Vec<Box<Token>>, expr_stack: &mut Vec<Box<ASTNode>>) -> Result<(), &'static str>{
     while let Some(stack_top) = operator_stack.pop() {
-        if get_operator_precedence(stack_top.as_ref()) < get_operator_precedence(current_token) {
+        if 
+            get_operator_precedence(stack_top.as_ref()) < get_operator_precedence(current_token) // If incoming operator has a higher precedence or has the same precedence and is right associative 
+            || (                                                                                       // push it on the stack, else pop the stack until it is true and then push on the stack 
+                get_operator_precedence(stack_top.as_ref()) == get_operator_precedence(current_token) 
+                && get_operator_associativity(current_token) == Associativity::RightToLeft
+            ) {
             operator_stack.push(stack_top);
             break;
         }
@@ -257,10 +279,19 @@ fn push_operation_to_expr_stack(operator: &Token, expr_stack: &mut Vec<Box<ASTNo
 /// Returns the precedence of an operator
 fn get_operator_precedence(token: &Token) -> u32 {
     match token {
-        Token::Plus | Token::Minus => 1,
+        Token::Assign => 2,
+        Token::Plus | Token::Minus => 3,
         Token::ExclamationMark => 5,
         Token::LeftParen | Token::Identifier(_) => 100,
         _ => 0
+    }
+}
+
+fn get_operator_associativity(token: &Token) -> Associativity {
+    if let Ok(binary_expr_type) = BinaryExpressionType::try_from(token) {
+        binary_expr_type.get_associativity()
+    } else {
+        Associativity::LeftToRight
     }
 }
 
