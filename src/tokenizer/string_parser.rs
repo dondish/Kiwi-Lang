@@ -32,7 +32,8 @@ enum StringFragment<'a> {
 fn parse_fragment<'a>(input: &'a str) -> IResult<&str, StringFragment<'a>> {
     alt((
         map(parse_literal, StringFragment::Literal),
-        map(parse_escaped_char, StringFragment::EscapedChar)
+        map(parse_escaped_char, StringFragment::EscapedChar),
+        value(StringFragment::EscapedWS, parse_escaped_whitespace)
     ))(input)
 }
 

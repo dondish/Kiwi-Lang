@@ -1,3 +1,4 @@
+use kiwi_lang::parser::build_ast;
 use kiwi_lang::tokenizer::{Token, parse_token};
 use nom::error::Error;
 use nom::Err;
@@ -23,8 +24,7 @@ fn get_all_tokens(input: &str) -> Result<Vec<Token>, Err<Error<&str>>> {
 }
 
 fn main() {
-
-    println!("{:?}", get_all_tokens(r#"
+    let tokens = get_all_tokens(r#"
     def hello_name name {
         return "Hello " + name
     }
@@ -35,5 +35,9 @@ fn main() {
         string = "Hello World!"
     
         print string
-    }"#));
+    }"#).unwrap();
+    let ast = build_ast(&tokens);
+
+
+    println!("{:?}", tokens);
 }

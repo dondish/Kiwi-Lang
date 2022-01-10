@@ -68,8 +68,8 @@ impl <'a> ASTBuildState<'a> {
 
 }
 
-fn build_ast(tokens: Vec<Token>) -> Result<AST, &'static str> {
-    let mut build_state = ASTBuildState::new(&tokens);
+pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, &'static str> {
+    let mut build_state = ASTBuildState::new(tokens);
 
     while build_state.current_index < tokens.len() {
         match tokens[build_state.current_index] {
@@ -80,7 +80,8 @@ fn build_ast(tokens: Vec<Token>) -> Result<AST, &'static str> {
             },
             Token::Define => {
                 build_state.current_index += 1;
-                //build_state.root_nodes.push(build_function(&mut build_state))
+                let function_definition = build_function(&mut build_state)?;
+                build_state.root_nodes.push(function_definition);
             }
             ,
             _ => { println!("Failed parsing at token"); return Err("Failed parsing at token")}
