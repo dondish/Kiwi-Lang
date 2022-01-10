@@ -10,7 +10,7 @@ use super::string_parser::parse_string;
  * 
  * They represent the lowest level of the scripting language
  */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Space,
     NewLine,

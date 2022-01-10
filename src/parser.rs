@@ -3,6 +3,7 @@ use std::vec;
 use crate::tokenizer::Token;
 
 /// Unary Expression Type like ! and ~
+#[derive(Debug, PartialEq)]
 pub enum UnaryExpressionType {
     Not, // !
 }
@@ -19,6 +20,7 @@ impl <'a> TryFrom<&'a Token> for UnaryExpressionType {
 }
 
 /// Binary Expression Type like + or -
+#[derive(Debug, PartialEq)]
 pub enum BinaryExpressionType {
     Add, // +
     Subtract // -
@@ -37,6 +39,7 @@ impl <'a> TryFrom<&'a Token> for BinaryExpressionType {
 }
 
 /// An enumeration of nodes in the AST
+#[derive(Debug, PartialEq)]
 pub enum ASTNode {
     Literal(Token), // Any type of literal
     Identifier(Token), // An identifier
@@ -68,6 +71,7 @@ impl <'a> ASTBuildState<'a> {
 
 }
 
+/// Builds the ast
 pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, &'static str> {
     let mut build_state = ASTBuildState::new(tokens);
 
@@ -91,13 +95,15 @@ pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, &'static str> {
     Ok(AST {root_nodes: build_state.root_nodes})
 }
 
+/// Builds an expression
 fn build_expression(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'static str> {
     build_expression_recursive(build_state, false)
 }
 
+/// Builds an expression which may be a function call
 fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
     let mut expression_fragments: Vec<Vec<Token>> = vec![vec![]];
-    let mut was_last_operator = is_operator(&build_state.tokens[build_state.current_index]);
+    let mut was_last_operator = true;
     let mut current_token = &build_state.tokens[build_state.current_index];
 
     while !is_expression_terminal_token(current_token) {
@@ -148,6 +154,11 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
             expression_fragments.push(vec![current_token.to_owned()]);
         }
         build_state.current_index += 1;
+        
+        if build_state.current_index == build_state.tokens.len() {
+            break;
+        }
+        
         current_token = &build_state.tokens[build_state.current_index];
     }
 
@@ -166,6 +177,7 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
 
 }
 
+/// Builds non expressions which are not function calls (can include one in parens)
 fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
     let mut expr_stack: Vec<Box<ASTNode>> = vec![];
     let mut operator_stack: Vec<Box<Token>> = vec![];
@@ -178,7 +190,7 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
             Token::Identifier(_) => expr_stack.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
             Token::Plus | Token::Minus | Token::ExclamationMark => {
                 while let Some(stack_top) = operator_stack.pop() {
-                    if get_operator_precedence(&stack_top) < get_operator_precedence(&current_token) {
+                    if get_operator_precedence(&stack_top) < get_operator_precedence(current_token) {
                         operator_stack.push(stack_top);
                         break;
                     }
@@ -200,6 +212,7 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
                         }));
                     }
                 }
+                operator_stack.push(Box::new(current_token.to_owned()));
             }
             Token::LeftParen => {
                 build_state.current_index += 1;
@@ -215,6 +228,11 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
             _ => return Err("Invalid token")
         }
         build_state.current_index += 1;
+
+        if build_state.current_index == build_state.tokens.len() {
+            break
+        }
+
         current_token = &build_state.tokens[build_state.current_index];
     }
 
@@ -284,5 +302,41 @@ fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
         } else {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tokenizer::Token;
+
+    use super::{build_expression, ASTBuildState, ASTNode};
+
+
+    #[test]
+    /// Tests basic expression a + b
+    fn basic_expression() {
+        let tokens = vec![Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]; // a + b
+        let mut build_state = ASTBuildState::new(&tokens);
+        let expression = build_expression(&mut build_state);
+        assert_eq!(
+            expression, 
+            Ok(
+                Box::new(
+                    ASTNode::BinaryExpression {
+                        expression_type: crate::parser::BinaryExpressionType::Add,
+                        left_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("a".to_string())
+                            )
+                        ),
+                        right_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("b".to_string())
+                            )
+                        )
+                    }
+                )
+            )
+        );
     }
 }
