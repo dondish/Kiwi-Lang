@@ -313,11 +313,12 @@ mod tests {
 
 
     #[test]
-    /// Tests basic expression a + b
+    /// Tests basic expression: a + b
     fn basic_expression() {
         let tokens = vec![Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]; // a + b
         let mut build_state = ASTBuildState::new(&tokens);
         let expression = build_expression(&mut build_state);
+
         assert_eq!(
             expression, 
             Ok(
@@ -336,7 +337,39 @@ mod tests {
                         )
                     }
                 )
-            )
+            ),
+            "Testing basic expression a + b"
         );
+    }
+
+    #[test]
+    /// Tests basic function call: print "Hello World!"
+    fn basic_function_call() {
+        let tokens = vec![Token::Identifier("print".to_string()), Token::StringLiteral("Hello World!".to_string())];
+        let mut build_state = ASTBuildState::new(&tokens);
+        let expression = build_expression(&mut build_state);
+
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::FunctionCall {
+                        function: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("print".to_string())
+                            )
+                        ),
+                        function_arguments: vec![
+                            Box::new(
+                                ASTNode::Literal(
+                                    Token::StringLiteral("Hello World!".to_string())
+                                )
+                            )
+                        ]
+                    }
+                )
+            )
+        )
+
     }
 }
