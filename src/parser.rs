@@ -313,8 +313,8 @@ mod tests {
 
 
     #[test]
-    /// Tests basic expression: a + b
-    fn basic_expression() {
+    /// Tests basic binary operator: a + b
+    fn basic_binary_operator() {
         let tokens = vec![Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]; // a + b
         let mut build_state = ASTBuildState::new(&tokens);
         let expression = build_expression(&mut build_state);
@@ -338,7 +338,7 @@ mod tests {
                     }
                 )
             ),
-            "Failed basic expression a + b"
+            "Failed basic binary operator: a + b"
         );
     }
 
