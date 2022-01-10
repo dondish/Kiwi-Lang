@@ -88,7 +88,7 @@ pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, &'static str> {
                 build_state.root_nodes.push(function_definition);
             }
             ,
-            _ => { println!("Failed parsing at token"); return Err("Failed parsing at token")}
+            _ => return Err("Failed parsing at token")
         }
     }
 
@@ -104,9 +104,11 @@ fn build_expression(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'s
 fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
     let mut expression_fragments: Vec<Vec<Token>> = vec![vec![]];
     let mut was_last_operator = true;
-    let mut current_token = &build_state.tokens[build_state.current_index];
 
-    while !is_expression_terminal_token(current_token) {
+    while let Some(current_token) = build_state.tokens.get(build_state.current_index) {
+        if is_expression_terminal_token(current_token) {
+            break;
+        }
         match current_token {
             Token::LeftParen => { // handle nested parens, just add the tokens to the correct expression fragment
                 if !was_last_operator { // If the last token was not an operator, 
@@ -116,21 +118,25 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
                 
                 let mut indentation = 0;
     
-                while !is_expression_terminal_token(&current_token) { // handle indentations
+                while let Some(current_token) = build_state.tokens.get(build_state.current_index) { // handle indentations
+                    if is_expression_terminal_token(&current_token) {
+                        break;
+                    }
                     expression_fragments.last_mut().unwrap().push(current_token.to_owned());
                     match current_token {
                         Token::LeftParen => indentation += 1,
                         Token::RightParen => {
                             indentation -= 1;
                             if indentation == 0 {
+                                build_state.current_index += 1;
                                 break;
                             }
                         }
                         _ => {}
                     }
                     build_state.current_index += 1;
-                    current_token = &build_state.tokens[build_state.current_index];
                 }
+                break;
             }
             Token::RightParen => {
                 if in_parens {
@@ -139,27 +145,23 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
                     return Err("Unexpected )")
                 }
             },
+            Token::Space => {
+                build_state.current_index += 1;
+                continue;
+            },
             _ => {}
         }
         if is_operator(&current_token) {
             was_last_operator = true;
             expression_fragments.last_mut().unwrap().push(current_token.to_owned());
         } else if was_last_operator {
-            match current_token {
-                Token::Space => {}
-                _ => was_last_operator = false
-            }
+            was_last_operator = false;
             expression_fragments.last_mut().unwrap().push(current_token.to_owned());
         } else {
             expression_fragments.push(vec![current_token.to_owned()]);
         }
+
         build_state.current_index += 1;
-        
-        if build_state.current_index == build_state.tokens.len() {
-            break;
-        }
-        
-        current_token = &build_state.tokens[build_state.current_index];
     }
 
     if expression_fragments.len() > 1 {
@@ -182,10 +184,12 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
 fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
     let mut expr_stack: Vec<Box<ASTNode>> = vec![];
     let mut operator_stack: Vec<Box<Token>> = vec![];
-    let mut current_token = &build_state.tokens[build_state.current_index];
     
 
-    while !is_expression_terminal_token(&current_token) {
+    while let Some(current_token) = build_state.tokens.get(build_state.current_index) {
+        if is_expression_terminal_token(&current_token) {
+            break;
+        }
         match current_token {
             Token::FloatLiteral(_) | Token::IntLiteral(_) | Token::StringLiteral(_) => expr_stack.push(Box::new(ASTNode::Literal(current_token.to_owned()))),
             Token::Identifier(_) => expr_stack.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
@@ -206,13 +210,8 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
             Token::Space => {},
             _ => return Err("Invalid token")
         }
+        
         build_state.current_index += 1;
-
-        if build_state.current_index == build_state.tokens.len() {
-            break
-        }
-
-        current_token = &build_state.tokens[build_state.current_index];
     }
 
     while let Some(stack_top) = operator_stack.pop() {
@@ -462,6 +461,45 @@ mod tests {
                 )
             ),
             "Failed basic operator precedence: a + !b"
+        )
+    }
+
+    #[test]
+    /// Nested function call: a + (f b)
+    fn nested_function_call() {
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("a".to_string()), Token::Plus, Token::LeftParen, Token::Identifier("f".to_string()), Token::Space, Token::Identifier("b".to_string()), Token::RightParen]);
+
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::BinaryExpression {
+                        expression_type: BinaryExpressionType::Add,
+                        left_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("a".to_string())
+                            )
+                        ),
+                        right_argument: Box::new(
+                            ASTNode::FunctionCall {
+                                function: Box::new(
+                                    ASTNode::Identifier(
+                                        Token::Identifier("f".to_string())
+                                    )
+                                ),
+                                function_arguments: vec![
+                                    Box::new(
+                                        ASTNode::Identifier(
+                                            Token::Identifier("b".to_string())
+                                        )
+                                    )
+                                ]
+                            }
+                        )
+                    }
+
+                )
+            )
         )
     }
 }
