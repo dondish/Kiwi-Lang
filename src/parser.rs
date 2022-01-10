@@ -2,31 +2,60 @@ use std::vec;
 
 use crate::tokenizer::Token;
 
+/// Unary Expression Type like ! and ~
 pub enum UnaryExpressionType {
-    Not,
+    Not, // !
 }
 
+impl <'a> TryFrom<&'a Token> for UnaryExpressionType {
+    type Error = &'static str;
+
+    fn try_from(token: &'a Token) -> Result<Self, Self::Error> {
+        match token {
+            Token::ExclamationMark => Ok(UnaryExpressionType::Not),
+            _ => Err("Invalid token")
+        }
+    }
+}
+
+/// Binary Expression Type like + or -
 pub enum BinaryExpressionType {
-    Add,
-    Subtract
+    Add, // +
+    Subtract // -
 }
+
+impl <'a> TryFrom<&'a Token> for BinaryExpressionType {
+    type Error = &'static str;
+
+    fn try_from(token: &'a Token) -> Result<Self, Self::Error> {
+        match token {
+            Token::Plus => Ok(BinaryExpressionType::Add),
+            Token::Minus => Ok(BinaryExpressionType::Subtract),
+            _ => Err("Invalid token")
+        }
+    }
+}
+
+/// An enumeration of nodes in the AST
 pub enum ASTNode {
-    Literal(Token),
-    Identifier(Token),
-    UnaryExpression { expression_type: UnaryExpressionType, argument: Box<ASTNode> },
-    BinaryExpression { expression_type: BinaryExpressionType, left_argument: Box<ASTNode>, right_argument: Box<ASTNode>},
-    AssignExpression { assignee: Box<ASTNode>, value: Box<ASTNode> },
-    FunctionCall { function_name: String, function_arguments: Vec<String>},
-    CodeBlock { lines: Vec<ASTNode> },
-    FunctionDefinition { function_name: String, function_arguments: Vec<String>, function_code: Box<ASTNode>}
+    Literal(Token), // Any type of literal
+    Identifier(Token), // An identifier
+    UnaryExpression { expression_type: UnaryExpressionType, argument: Box<ASTNode> }, // A unary expression
+    BinaryExpression { expression_type: BinaryExpressionType, left_argument: Box<ASTNode>, right_argument: Box<ASTNode>}, // A binary expression
+    AssignExpression { assignee: Box<ASTNode>, value: Box<ASTNode> }, // Assignment expression
+    FunctionCall { function: Box<ASTNode>, function_arguments: Vec<Box<ASTNode>>}, // Function call
+    CodeBlock { lines: Vec<Box<ASTNode>> }, // Multiple Statements
+    FunctionDefinition { function_name: Box<ASTNode>, function_arguments: Vec<Box<ASTNode>>, function_code: Box<ASTNode>}
 }
 
+/// An Abstract Syntax Tree
 pub struct AST {
-    root_nodes: Vec<ASTNode>
+    root_nodes: Vec<Box<ASTNode>>
 }
 
+/// AST Build State
 struct ASTBuildState<'a> {
-    root_nodes: Vec<ASTNode>,
+    root_nodes: Vec<Box<ASTNode>>,
     tokens: &'a Vec<Token>,
     current_index: usize
 }
@@ -45,10 +74,13 @@ fn build_ast(tokens: Vec<Token>) -> Result<AST, &'static str> {
     while build_state.current_index < tokens.len() {
         match tokens[build_state.current_index] {
             Token::Space | Token::NewLine => build_state.current_index += 1,
-            Token::Identifier(_)  => build_state.root_nodes.push(build_statement(&mut build_state)?),
+            Token::Identifier(_)  => {
+                let statement = build_statement(&mut build_state)?;
+                build_state.root_nodes.push(statement)
+            },
             Token::Define => {
                 build_state.current_index += 1;
-                build_state.root_nodes.push(build_function(&mut build_state))
+                //build_state.root_nodes.push(build_function(&mut build_state))
             }
             ,
             _ => { println!("Failed parsing at token"); return Err("Failed parsing at token")}
@@ -58,58 +90,122 @@ fn build_ast(tokens: Vec<Token>) -> Result<AST, &'static str> {
     Ok(AST {root_nodes: build_state.root_nodes})
 }
 
-fn build_expression(build_state: &mut ASTBuildState) -> Result<ASTNode, &'static str> {
+fn build_expression(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'static str> {
     build_expression_recursive(build_state, false)
 }
 
-fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) -> Result<ASTNode, &'static str> {
+fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
+    let mut expression_fragments: Vec<Vec<Token>> = vec![vec![]];
+    let mut was_last_operator = is_operator(&build_state.tokens[build_state.current_index]);
+    let mut current_token = &build_state.tokens[build_state.current_index];
+
+    while !is_expression_terminal_token(current_token) {
+        match current_token {
+            Token::LeftParen => { // handle nested parens, just add the tokens to the correct expression fragment
+                if !was_last_operator { // If the last token was not an operator, 
+                    expression_fragments.push(vec![]);
+                }
+                was_last_operator = false; // Operator cannot be a result of the parenthesis
+                
+                let mut indentation = 0;
     
+                while !is_expression_terminal_token(&current_token) { // handle indentations
+                    expression_fragments.last_mut().unwrap().push(current_token.to_owned());
+                    match current_token {
+                        Token::LeftParen => indentation += 1,
+                        Token::RightParen => {
+                            indentation -= 1;
+                            if indentation == 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    build_state.current_index += 1;
+                    current_token = &build_state.tokens[build_state.current_index];
+                }
+            }
+            Token::RightParen => {
+                if in_parens {
+                    break;
+                } else {
+                    return Err("Unexpected )")
+                }
+            },
+            _ => {}
+        }
+        if is_operator(&current_token) {
+            was_last_operator = true;
+            expression_fragments.last_mut().unwrap().push(current_token.to_owned());
+        } else if was_last_operator {
+            match current_token {
+                Token::Space => {}
+                _ => was_last_operator = false
+            }
+            expression_fragments.last_mut().unwrap().push(current_token.to_owned());
+        } else {
+            expression_fragments.push(vec![current_token.to_owned()]);
+        }
+        build_state.current_index += 1;
+        current_token = &build_state.tokens[build_state.current_index];
+    }
+
+    if expression_fragments.len() > 1 {
+        Ok(Box::new(ASTNode::FunctionCall {
+            function: build_non_function_call_expression(&mut ASTBuildState::new(&expression_fragments[0]), in_parens)?,
+            function_arguments: expression_fragments
+                .iter()
+                .skip(1)
+                .map(|tokens| build_non_function_call_expression(&mut ASTBuildState::new(tokens), in_parens))
+                .collect::<Result<Vec<Box<ASTNode>>, &'static str>>()?
+        }))
+    } else {
+        build_non_function_call_expression(&mut ASTBuildState::new(&expression_fragments[0]), in_parens)
+    }
+
 }
 
-fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<ASTNode, &'static str> {
-    let mut expr_stack: Vec<ASTNode> = vec![];
-    let mut operator_stack: Vec<Token> = vec![];
-    let mut current_token = build_state.tokens[build_state.current_index];
+fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, &'static str> {
+    let mut expr_stack: Vec<Box<ASTNode>> = vec![];
+    let mut operator_stack: Vec<Box<Token>> = vec![];
+    let mut current_token = &build_state.tokens[build_state.current_index];
     
 
     while !is_expression_terminal_token(&current_token) {
         match current_token {
-            Token::FloatLiteral(_) | Token::IntLiteral(_) | Token::StringLiteral(_) => expr_stack.push(ASTNode::Literal(current_token)),
-            Token::Identifier(_) => expr_stack.push(ASTNode::Identifier(current_token)),
+            Token::FloatLiteral(_) | Token::IntLiteral(_) | Token::StringLiteral(_) => expr_stack.push(Box::new(ASTNode::Literal(current_token.to_owned()))),
+            Token::Identifier(_) => expr_stack.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
             Token::Plus | Token::Minus | Token::ExclamationMark => {
-                while let Some(stack_top) = operator_stack.last() {
-                    if get_operator_precedence(stack_top) < get_operator_precedence(&current_token) {
+                while let Some(stack_top) = operator_stack.pop() {
+                    if get_operator_precedence(&stack_top) < get_operator_precedence(&current_token) {
+                        operator_stack.push(stack_top);
                         break;
                     }
-                    operator_stack.pop();
-                    if is_binary_operator(&stack_top) {
-                        let right_expr = expr_stack.pop();
-                        let left_expr = expr_stack.pop();
-                        if left_expr.is_none() || right_expr.is_none() {
-                            return Err("No expressions for operator");
-                        }
-                        expr_stack.push(ASTNode::BinaryExpression{ 
-                            expression_type: get_binary_expression_type(&stack_top)?, 
-                            left_argument: Box::new(left_expr.unwrap()), 
-                            right_argument: Box::new(right_expr.unwrap())
-                        });
-                    } else if is_unary_operator(&stack_top) {
-                        let expr = expr_stack.pop();
+                    if BinaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
+                        let right_expr = expr_stack.pop().ok_or("No expressions for operator")?;
+                        let left_expr = expr_stack.pop().ok_or("No expressions for operator")?;
 
-                        if expr.is_none() {
-                            return Err("No expressions for operator");
-                        }
-                        expr_stack.push(ASTNode::UnaryExpression {
-                            expression_type: get_unary_expression_type(&stack_top)?,
-                            argument: Box::new(expr.unwrap())
-                        });
+                        expr_stack.push(Box::new(ASTNode::BinaryExpression{ 
+                            expression_type: stack_top.as_ref().try_into()?, 
+                            left_argument: left_expr, 
+                            right_argument: right_expr
+                        }));
+                    } else if UnaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
+                        let expr = expr_stack.pop().ok_or("No expressions for operator")?;
+
+                        expr_stack.push(Box::new(ASTNode::UnaryExpression {
+                            expression_type: stack_top.as_ref().try_into()?,
+                            argument: expr
+                        }));
                     }
                 }
             }
-            Token::LeftParen => expr_stack.push(build_expression_recursive(build_state, true)?),
+            Token::LeftParen => {
+                build_state.current_index += 1;
+                expr_stack.push(build_expression_recursive(build_state, true)?)
+            },
             Token::RightParen => {
                 if in_parens {
-                    build_state.current_index += 1;
                     break;
                 }
                 return Err("Unexpected )");
@@ -118,39 +214,35 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
             _ => return Err("Invalid token")
         }
         build_state.current_index += 1;
-        current_token = build_state.tokens[build_state.current_index];
+        current_token = &build_state.tokens[build_state.current_index];
     }
 
     while let Some(stack_top) = operator_stack.pop() {
-        if is_binary_operator(&stack_top) {
-            let right_expr = expr_stack.pop();
-            let left_expr = expr_stack.pop();
-            if left_expr.is_none() || right_expr.is_none() {
-                return Err("No expressions for operator");
-            }
-            expr_stack.push(ASTNode::BinaryExpression{ 
-                expression_type: get_binary_expression_type(&stack_top)?, 
-                left_argument: Box::new(left_expr.unwrap()), 
-                right_argument: Box::new(right_expr.unwrap())
-            });
-        } else if is_unary_operator(&stack_top) {
-            let expr = expr_stack.pop();
+        if BinaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
+            let right_expr = expr_stack.pop().ok_or("No expressions for operator")?;
+            let left_expr = expr_stack.pop().ok_or("No expressions for operator")?;
 
-            if expr.is_none() {
-                return Err("No expressions for operator");
-            }
-            expr_stack.push(ASTNode::UnaryExpression {
-                expression_type: get_unary_expression_type(&stack_top)?,
-                argument: Box::new(expr.unwrap())
-            });
+            expr_stack.push(Box::new(ASTNode::BinaryExpression{ 
+                expression_type: stack_top.as_ref().try_into()?, 
+                left_argument: left_expr, 
+                right_argument: right_expr
+            }));
+        } else if UnaryExpressionType::try_from(stack_top.as_ref()).is_ok() {
+            let expr = expr_stack.pop().ok_or("No expressions for operator")?;
+
+            expr_stack.push(Box::new(ASTNode::UnaryExpression {
+                expression_type: UnaryExpressionType::try_from(stack_top.as_ref())?,
+                argument: expr
+            }));
         }
     }
 
 
 
-    expr_stack.pop().ok_or_else(|| "No expressions")
+    expr_stack.pop().ok_or("No expressions")
 }
 
+/// Returns the precedence of an operator
 fn get_operator_precedence(token: &Token) -> u32 {
     match token {
         Token::Plus | Token::Minus => 1,
@@ -160,35 +252,12 @@ fn get_operator_precedence(token: &Token) -> u32 {
     }
 }
 
-fn is_binary_operator(token: &Token) -> bool {
-    match token {
-        Token::Plus | Token::Minus => true,
-        _ => false
-    }
+/// Returns whether a token represents an operator
+fn is_operator(token: &Token) -> bool {
+    BinaryExpressionType::try_from(token).is_ok() || UnaryExpressionType::try_from(token).is_ok()
 }
 
-fn is_unary_operator(token: &Token) -> bool {
-    match token {
-        Token::ExclamationMark => true,
-        _ => false
-    }
-}
-
-fn get_binary_expression_type(token: &Token) -> Result<BinaryExpressionType, &'static str> {
-    match token {
-        Token::Plus => Ok(BinaryExpressionType::Add),
-        Token::Minus => Ok(BinaryExpressionType::Subtract),
-        _ => Err("Invalid token")
-    }
-}
-
-fn get_unary_expression_type(token: &Token) -> Result<UnaryExpressionType, &'static str> {
-    match token {
-        Token::ExclamationMark => Ok(UnaryExpressionType::Not),
-        _ => Err("Invalid token")
-    }
-}
-
+/// Returns whether the token terminates the expression
 fn is_expression_terminal_token(token: &Token) -> bool {
     match token {
         Token::Eof | Token::NewLine | Token::Unknown | Token::RightCurlyBracket => true,
@@ -196,28 +265,17 @@ fn is_expression_terminal_token(token: &Token) -> bool {
     }
 }
 
-fn build_statement(build_state: &mut ASTBuildState) -> Result<ASTNode, &'static str> {
-    skip_over_whitespaces(build_state);
-    let left_side = vec![];
-    let i = build_state.current_index;
-
-    while i < build_state.tokens.len() {
-        let token = build_state.tokens[i];
-        match token {
-            Token::Define | Token::LeftCurlyBracket | Token::RightCurlyBracket | Token::RightParen | Token::Unknown => { println!("Error"); break; },
-            Token::NewLine => break,
-            Token::LeftParen => b
-            _ => i += 1
-        }
-    }
-
-    if let 
+/// Builds an AST statement 
+fn build_statement(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'static str> {
+    Err("Unimplemented")
 }
 
-fn build_function(build_state: &mut ASTBuildState) -> ASTNode {
-    
+/// Builds an AST function
+fn build_function(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, &'static str> {
+    Err("Unimplemented")
 }
 
+/// Increments the build state's index until it no longer points on a white-space token
 fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
     while build_state.current_index < build_state.tokens.len() {
         if let Token::NewLine | Token::Space = build_state.tokens[build_state.current_index] {
