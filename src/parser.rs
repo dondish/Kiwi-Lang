@@ -307,24 +307,27 @@ fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{tokenizer::Token, parser::UnaryExpressionType};
+    use crate::{tokenizer::Token, parser::{UnaryExpressionType, BinaryExpressionType}};
 
     use super::{build_expression, ASTBuildState, ASTNode};
+
+    fn get_expression_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, &'static str> {
+        let mut build_state = ASTBuildState::new(&tokens);
+        build_expression(&mut build_state)
+    }
 
 
     #[test]
     /// Tests basic binary operator: a + b
     fn basic_binary_operator() {
-        let tokens = vec![Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]; // a + b
-        let mut build_state = ASTBuildState::new(&tokens);
-        let expression = build_expression(&mut build_state);
-
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]); // a + b
+        
         assert_eq!(
             expression, 
             Ok(
                 Box::new(
                     ASTNode::BinaryExpression {
-                        expression_type: crate::parser::BinaryExpressionType::Add,
+                        expression_type: BinaryExpressionType::Add,
                         left_argument: Box::new(
                             ASTNode::Identifier(
                                 Token::Identifier("a".to_string())
@@ -345,9 +348,7 @@ mod tests {
     #[test]
     /// Tests basic function call: print "Hello World!"
     fn basic_function_call() {
-        let tokens = vec![Token::Identifier("print".to_string()), Token::StringLiteral("Hello World!".to_string())];
-        let mut build_state = ASTBuildState::new(&tokens);
-        let expression = build_expression(&mut build_state);
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("print".to_string()), Token::StringLiteral("Hello World!".to_string())]);
 
         assert_eq!(
             expression,
@@ -376,9 +377,7 @@ mod tests {
     #[test]
     /// Test basic unary operator: !1
     fn basic_unary_operator() {
-        let tokens = vec![Token::ExclamationMark, Token::IntLiteral(1)];
-        let mut build_state = ASTBuildState::new(&tokens);
-        let expression = build_expression(&mut build_state);
+        let expression = get_expression_from_tokens(&vec![Token::ExclamationMark, Token::IntLiteral(1)]);
 
         assert_eq!(
             expression,
@@ -396,5 +395,47 @@ mod tests {
             ),
             "Failed basic unary operator: !1"
         )
+    }
+
+    #[test]
+    /// Test basic nested expression: a + b - c
+    fn basic_nested_expression() {
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string()), Token::Minus, Token::Identifier("c".to_string())]);
+        
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::BinaryExpression {
+                        expression_type: BinaryExpressionType::Subtract,
+                        left_argument: Box::new(
+                            ASTNode::BinaryExpression {
+                                expression_type: BinaryExpressionType::Add,
+                                left_argument: Box::new(
+                                    ASTNode::Identifier(
+                                        Token::Identifier(
+                                            "a".to_string()
+                                        )
+                                    )
+                                ),
+                                right_argument: Box::new(
+                                    ASTNode::Identifier(
+                                        Token::Identifier("b".to_string())
+                                    ),
+                                )
+                            }
+                        ),
+                        right_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier(
+                                    "c".to_string()
+                                ))
+                        )
+                    }
+                )
+            )
+        )
+
+
     }
 }
