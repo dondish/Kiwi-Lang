@@ -28,7 +28,7 @@ fn get_all_tokens(input: &str) -> Result<Vec<Token>, Err<Error<&str>>> {
 }
 
 fn main() {
-    let tokens = get_all_tokens(r#"
+    let code = r#"
     def hello_name name {
         return "Hello " + name
     }
@@ -39,10 +39,14 @@ fn main() {
         string = "Hello World!"
     
         print string
-    }"#).unwrap();
+    }"#;
+    let tokens = get_all_tokens(code).unwrap();
     let ast = build_ast(&tokens).unwrap();
 
 
+    println!("------------- Code -------------");
+    println!("{}", code);
+    println!();
     println!("------------- Tokens -------------");
     println!("{:#?}", tokens);
     println!();

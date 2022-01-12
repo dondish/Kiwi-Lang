@@ -41,7 +41,7 @@ fn parse_fragment<'a>(input: &'a str) -> IResult<&str, StringFragment<'a>> {
 fn parse_literal(input: &str) -> IResult<&str, &str> {
     let not_quote_slash = is_not("\\\"");
 
-    verify(not_quote_slash, |s : &str| s.is_empty())(input)
+    verify(not_quote_slash, |s : &str| !s.is_empty())(input)
 }
 
 // Parses escaped characters
