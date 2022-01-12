@@ -78,7 +78,7 @@ impl <'a> TryFrom<&'a Token> for LiteralKind {
             Token::FloatLiteral(f) => Ok(LiteralKind::FloatLiteral(f.to_owned())),
             Token::StringLiteral(s) => Ok(LiteralKind::StringLiteral(s.to_owned())),
             _ =>  Err(ParserError{
-                kind: ParserErrorKind::InvalidUnaryOperatorToken,
+                kind: ParserErrorKind::InvalidLiteral,
                 token: token.to_owned()
             })
         }
