@@ -62,11 +62,35 @@ impl <'a> TryFrom<&'a Token> for BinaryExpressionType {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum LiteralKind {
+    IntLiteral(i64),
+    FloatLiteral(f64),
+    StringLiteral(String)
+}
+
+impl <'a> TryFrom<&'a Token> for LiteralKind {
+    type Error = ParserError;
+
+    fn try_from(token: &'a Token) -> Result<Self, Self::Error> {
+        match token {
+            Token::IntLiteral(i) => Ok(LiteralKind::IntLiteral(i.to_owned())),
+            Token::FloatLiteral(f) => Ok(LiteralKind::FloatLiteral(f.to_owned())),
+            Token::StringLiteral(s) => Ok(LiteralKind::StringLiteral(s.to_owned())),
+            _ =>  Err(ParserError{
+                kind: ParserErrorKind::InvalidUnaryOperatorToken,
+                token: token.to_owned()
+            })
+        }
+    }
+}
+
+
 /// An enumeration of nodes in the AST
 #[derive(Debug, PartialEq, Clone)]
 pub enum ASTNode {
-    Literal(Token), // Any type of literal
-    Identifier(Token), // An identifier
+    Literal(LiteralKind), // Any type of literal
+    Identifier(String), // An identifier
     UnaryExpression { expression_type: UnaryExpressionType, argument: Box<ASTNode> }, // A unary expression
     BinaryExpression { expression_type: BinaryExpressionType, left_argument: Box<ASTNode>, right_argument: Box<ASTNode>}, // A binary expression
     FunctionCall { function: Box<ASTNode>, function_arguments: Vec<Box<ASTNode>>}, // Function call
@@ -103,7 +127,8 @@ pub enum ParserErrorKind {
     InvalidNumberOfOperatorParameters,
     InvalidUnaryOperatorToken,
     InvalidBinaryOperatorToken,
-    InvalidFunctionSignature
+    InvalidFunctionSignature,
+    InvalidLiteral
 }
 
 #[derive(Debug, PartialEq)]
@@ -235,8 +260,8 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, terminal_
             break;
         }
         match current_token {
-            Token::FloatLiteral(_) | Token::IntLiteral(_) | Token::StringLiteral(_) => expr_stack.push(Box::new(ASTNode::Literal(current_token.to_owned()))),
-            Token::Identifier(_) => expr_stack.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
+            Token::FloatLiteral(_) | Token::IntLiteral(_) | Token::StringLiteral(_) => expr_stack.push(Box::new(ASTNode::Literal(current_token.try_into()?))),
+            Token::Identifier(ident) => expr_stack.push(Box::new(ASTNode::Identifier(ident.to_owned()))),
             Token::Plus | Token::Minus | Token::ExclamationMark | Token::Assign => {
                 shunting_yard_look_for_lower_precedence(current_token, &mut operator_stack, &mut expr_stack)?;
                 operator_stack.push(Box::new(current_token.to_owned()));
@@ -438,7 +463,7 @@ fn build_function_signature(build_state: &mut ASTBuildState) -> Result<(Box<ASTN
 
     while let Some(current_token) = build_state.tokens.get(build_state.current_index) {
         match current_token {
-            Token::Identifier(_) => arguments.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
+            Token::Identifier(ident) => arguments.push(Box::new(ASTNode::Identifier(ident.to_owned()))),
             Token::LeftCurlyBracket => break,
             _ => return Err(
                 ParserError {
@@ -474,7 +499,7 @@ fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{tokenizer::Token, parser::{UnaryExpressionType, BinaryExpressionType}};
+    use crate::{tokenizer::Token, parser::{UnaryExpressionType, BinaryExpressionType, LiteralKind}};
 
     use super::{build_expression, ASTBuildState, ASTNode, ParserError, build_statement, build_function};
 
@@ -505,14 +530,10 @@ mod tests {
                     ASTNode::BinaryExpression {
                         expression_type: BinaryExpressionType::Add,
                         left_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("a".to_string())
-                            )
+                            ASTNode::Identifier("a".to_string())
                         ),
                         right_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("b".to_string())
-                            )
+                            ASTNode::Identifier("b".to_string())
                         )
                     }
                 )
@@ -532,14 +553,12 @@ mod tests {
                 Box::new(
                     ASTNode::FunctionCall {
                         function: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("print".to_string())
-                            )
+                            ASTNode::Identifier("print".to_string())
                         ),
                         function_arguments: vec![
                             Box::new(
                                 ASTNode::Literal(
-                                    Token::StringLiteral("Hello World!".to_string())
+                                    LiteralKind::StringLiteral("Hello World!".to_string())
                                 )
                             )
                         ]
@@ -563,7 +582,7 @@ mod tests {
                         expression_type: UnaryExpressionType::Not,
                         argument: Box::new(
                             ASTNode::Literal(
-                                Token::IntLiteral(1)
+                                LiteralKind::IntLiteral(1)
                             )
                         )
                     }
@@ -588,24 +607,15 @@ mod tests {
                             ASTNode::BinaryExpression {
                                 expression_type: BinaryExpressionType::Add,
                                 left_argument: Box::new(
-                                    ASTNode::Identifier(
-                                        Token::Identifier(
-                                            "a".to_string()
-                                        )
-                                    )
+                                    ASTNode::Identifier("a".to_string())
                                 ),
                                 right_argument: Box::new(
-                                    ASTNode::Identifier(
-                                        Token::Identifier("b".to_string())
-                                    ),
+                                    ASTNode::Identifier("b".to_string())
                                 )
                             }
                         ),
                         right_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier(
-                                    "c".to_string()
-                                ))
+                            ASTNode::Identifier("c".to_string())
                         )
                     }
                 )
@@ -626,17 +636,13 @@ mod tests {
                     ASTNode::BinaryExpression {
                         expression_type: BinaryExpressionType::Add,
                         left_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("a".to_string())
-                            )
+                            ASTNode::Identifier("a".to_string())
                         ),
                         right_argument: Box::new(
                             ASTNode::UnaryExpression {
                                 expression_type: UnaryExpressionType::Not,
                                 argument: Box::new(
-                                    ASTNode::Identifier(
-                                        Token::Identifier("b".to_string())
-                                    )
+                                    ASTNode::Identifier("b".to_string())
                                 )
                             }
                         )
@@ -659,22 +665,16 @@ mod tests {
                     ASTNode::BinaryExpression {
                         expression_type: BinaryExpressionType::Add,
                         left_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("a".to_string())
-                            )
+                            ASTNode::Identifier("a".to_string())
                         ),
                         right_argument: Box::new(
                             ASTNode::FunctionCall {
                                 function: Box::new(
-                                    ASTNode::Identifier(
-                                        Token::Identifier("f".to_string())
-                                    )
+                                    ASTNode::Identifier("f".to_string())
                                 ),
                                 function_arguments: vec![
                                     Box::new(
-                                        ASTNode::Identifier(
-                                            Token::Identifier("b".to_string())
-                                        )
+                                        ASTNode::Identifier("b".to_string())
                                     )
                                 ]
                             }
@@ -698,23 +698,17 @@ mod tests {
                 Box::new(
                     ASTNode::FunctionCall {
                         function: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("f".to_string())
-                            )
+                            ASTNode::Identifier("f".to_string())
                         ),
                         function_arguments: vec![
                             Box::new(
                                 ASTNode::BinaryExpression {
                                     expression_type: BinaryExpressionType::Add,
                                     left_argument: Box::new(
-                                        ASTNode::Identifier(
-                                            Token::Identifier("a".to_string())
-                                        )
+                                        ASTNode::Identifier("a".to_string())
                                     ),
                                     right_argument: Box::new(
-                                        ASTNode::Identifier(
-                                            Token::Identifier("b".to_string())
-                                        )
+                                        ASTNode::Identifier("b".to_string())
                                     )
                                 }
                             )
@@ -744,14 +738,10 @@ mod tests {
                                     ASTNode::BinaryExpression {
                                         expression_type: BinaryExpressionType::Add,
                                         left_argument: Box::new(
-                                            ASTNode::Identifier(
-                                                Token::Identifier("a".to_string())
-                                            )
+                                            ASTNode::Identifier("a".to_string())
                                         ),
                                         right_argument: Box::new(
-                                            ASTNode::Identifier(
-                                                Token::Identifier("b".to_string())
-                                            )
+                                            ASTNode::Identifier("b".to_string())
                                         )
                                     }
                                 ),
@@ -759,23 +749,17 @@ mod tests {
                                     ASTNode::BinaryExpression {
                                         expression_type: BinaryExpressionType::Subtract,
                                         left_argument: Box::new(
-                                            ASTNode::Identifier(
-                                                Token::Identifier("c".to_string())
-                                            )
+                                            ASTNode::Identifier("c".to_string())
                                         ),
                                         right_argument: Box::new(
-                                            ASTNode::Identifier(
-                                                Token::Identifier("d".to_string())
-                                            )
+                                            ASTNode::Identifier("d".to_string())
                                         )
                                     }
                                 )
                             }
                         ),
                         right_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("e".to_string())
-                            )
+                            ASTNode::Identifier("e".to_string())
                         )
                     }
                 )
@@ -795,31 +779,23 @@ mod tests {
                 Box::new(
                     ASTNode::FunctionCall {
                         function: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("f".to_string())
-                            )
+                            ASTNode::Identifier("f".to_string())
                         ),
                         function_arguments: vec![
                             Box::new(
                                 ASTNode::FunctionCall {
                                     function: Box::new(
-                                        ASTNode::Identifier(
-                                            Token::Identifier("g".to_string())
-                                        )
+                                        ASTNode::Identifier("g".to_string())
                                     ),
                                     function_arguments: vec![
                                         Box::new(
-                                            ASTNode::Identifier(
-                                                Token::Identifier("a".to_string())
-                                            )
+                                            ASTNode::Identifier("a".to_string())
                                         )
                                     ]
                                 }
                             ),
                             Box::new(
-                                ASTNode::Identifier(
-                                    Token::Identifier("b".to_string())
-                                )
+                                ASTNode::Identifier("b".to_string())
                             )
                         ]
                     }
@@ -842,14 +818,10 @@ mod tests {
                     ASTNode::BinaryExpression {
                         expression_type: BinaryExpressionType::Add,
                         left_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("a".to_string())
-                            )
+                            ASTNode::Identifier("a".to_string())
                         ),
                         right_argument: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("b".to_string())
-                            )
+                            ASTNode::Identifier("b".to_string())
                         )
                     }
                 )
@@ -872,14 +844,10 @@ mod tests {
                             ASTNode::BinaryExpression {
                                 expression_type: BinaryExpressionType::Add,
                                 left_argument: Box::new(
-                                    ASTNode::Identifier(
-                                        Token::Identifier("a".to_string())
-                                    )
+                                    ASTNode::Identifier("a".to_string())
                                 ),
                                 right_argument: Box::new(
-                                    ASTNode::Identifier(
-                                        Token::Identifier("b".to_string())
-                                    )
+                                    ASTNode::Identifier("b".to_string())
                                 )
                             }
                         )
@@ -901,9 +869,7 @@ mod tests {
                 Box::new(
                     ASTNode::FunctionDefinition {
                         function_name: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("f".to_string())
-                            )
+                            ASTNode::Identifier("f".to_string())
                         ),
                         function_arguments: vec![],
                         function_code: Box::new(
@@ -929,20 +895,14 @@ mod tests {
                 Box::new(
                     ASTNode::FunctionDefinition {
                         function_name: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("f".to_string())
-                            )
+                            ASTNode::Identifier("f".to_string())
                         ),
                         function_arguments: vec![
                             Box::new(
-                                ASTNode::Identifier(
-                                    Token::Identifier("a".to_string())
-                                )
+                                ASTNode::Identifier("a".to_string())
                             ),
                             Box::new(
-                                ASTNode::Identifier(
-                                    Token::Identifier("b".to_string())
-                                )
+                                ASTNode::Identifier("b".to_string())
                             )
                         ],
                         function_code: Box::new(
@@ -968,9 +928,7 @@ mod tests {
                 Box::new(
                     ASTNode::FunctionDefinition {
                         function_name: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("f".to_string())
-                            )
+                            ASTNode::Identifier("f".to_string())
                         ),
                         function_arguments: vec![],
                         function_code: Box::new(
@@ -982,14 +940,10 @@ mod tests {
                                                 ASTNode::BinaryExpression {
                                                     expression_type: BinaryExpressionType::Add,
                                                     left_argument: Box::new(
-                                                        ASTNode::Identifier(
-                                                            Token::Identifier("a".to_string())
-                                                        )
+                                                        ASTNode::Identifier("a".to_string())
                                                     ),
                                                     right_argument: Box::new(
-                                                        ASTNode::Identifier(
-                                                            Token::Identifier("b".to_string())
-                                                        )
+                                                        ASTNode::Identifier("b".to_string())
                                                     )
                                                 }
                                             )
@@ -1020,9 +974,7 @@ mod tests {
                 Box::new(
                     ASTNode::FunctionDefinition {
                         function_name: Box::new(
-                            ASTNode::Identifier(
-                                Token::Identifier("f".to_string())
-                            )
+                            ASTNode::Identifier("f".to_string())
                         ),
                         function_arguments: vec![],
                         function_code: Box::new(
@@ -1032,13 +984,11 @@ mod tests {
                                         ASTNode::BinaryExpression {
                                             expression_type: BinaryExpressionType::Assign,
                                             left_argument: Box::new(
-                                                ASTNode::Identifier(
-                                                    Token::Identifier("name".to_string())
-                                                )
+                                                ASTNode::Identifier("name".to_string())
                                             ),
                                             right_argument: Box::new(
                                                 ASTNode::Literal(
-                                                    Token::StringLiteral("Oded".to_string())
+                                                    LiteralKind::StringLiteral("Oded".to_string())
                                                 )
                                             )
                                         }
@@ -1046,9 +996,7 @@ mod tests {
                                     Box::new(
                                         ASTNode::ReturnStatement {
                                             expression: Box::new(
-                                                ASTNode::Identifier(
-                                                    Token::Identifier("name".to_string())
-                                                )
+                                                ASTNode::Identifier("name".to_string())
                                             )
                                         }
                                     )
