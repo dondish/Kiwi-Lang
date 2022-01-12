@@ -139,16 +139,16 @@ pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, ParserError> {
 
 /// Builds an expression
 fn build_expression(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
-    build_expression_recursive(build_state, false)
+    build_expression_recursive(build_state, &get_default_expression_terminal_tokens())
 }
 
 /// Builds an expression which may be a function call
-fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, ParserError> {
+fn build_expression_recursive(build_state: &mut ASTBuildState, terminal_tokens: &[Token]) -> Result<Box<ASTNode>, ParserError> {
     let mut expression_fragments: Vec<Vec<Token>> = vec![vec![]];
     let mut was_last_operator = true;
 
     while let Some(current_token) = build_state.tokens.get(build_state.current_index) {
-        if is_expression_terminal_token(current_token) {
+        if terminal_tokens.contains(current_token) {
             break;
         }
         match current_token {
@@ -158,37 +158,15 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
                 }
                 was_last_operator = false; // Operator cannot be a result of the parenthesis
                 
-                let mut indentation = 0;
-    
-                while let Some(current_token) = build_state.tokens.get(build_state.current_index) { // handle indentations
-                    if is_expression_terminal_token(&current_token) {
-                        break;
-                    }
-                    expression_fragments.last_mut().unwrap().push(current_token.to_owned());
-                    match current_token {
-                        Token::LeftParen => indentation += 1,
-                        Token::RightParen => {
-                            indentation -= 1;
-                            if indentation == 0 {
-                                build_state.current_index += 1;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                    build_state.current_index += 1;
-                }
+                add_expressions_in_parenthesis(build_state, expression_fragments.last_mut().unwrap());
+                
                 continue;
             }
             Token::RightParen => {
-                if in_parens {
-                    break;
-                } else {
-                    return Err(ParserError{
-                        kind: ParserErrorKind::UnexpectedToken,
-                        token: current_token.to_owned()
-                    })
-                }
+                return Err(ParserError{
+                    kind: ParserErrorKind::UnexpectedToken,
+                    token: current_token.to_owned()
+                })
             },
             Token::Space => {
                 build_state.current_index += 1;
@@ -211,28 +189,52 @@ fn build_expression_recursive(build_state: &mut ASTBuildState, in_parens: bool) 
 
     if expression_fragments.len() > 1 {
         Ok(Box::new(ASTNode::FunctionCall {
-            function: build_non_function_call_expression(&mut ASTBuildState::new(&expression_fragments[0]), in_parens)?,
+            function: build_non_function_call_expression(&mut ASTBuildState::new(&expression_fragments[0]), terminal_tokens)?,
             function_arguments: expression_fragments
                 .iter()
                 .skip(1)
-                .map(|tokens| build_non_function_call_expression(&mut ASTBuildState::new(tokens), in_parens))
+                .map(|tokens| build_non_function_call_expression(&mut ASTBuildState::new(tokens), terminal_tokens))
                 .collect::<Result<Vec<Box<ASTNode>>, ParserError>>()?
         }))
     } else {
-        build_non_function_call_expression(&mut ASTBuildState::new(&expression_fragments[0]), in_parens)
+        build_non_function_call_expression(&mut ASTBuildState::new(&expression_fragments[0]), terminal_tokens)
     }
 
 }
 
+fn add_expressions_in_parenthesis(build_state: &mut ASTBuildState, expression_fragment: &mut Vec<Token>) {
+    let mut indentation = 0;
+    let parens_terminal_tokens = get_in_parens_expression_terminal_tokens();
+
+    while let Some(current_token) = build_state.tokens.get(build_state.current_index) { // handle indentations
+        if parens_terminal_tokens.contains(&current_token) {
+            break;
+        }
+        expression_fragment.push(current_token.to_owned());
+        match current_token {
+            Token::LeftParen => indentation += 1,
+            Token::RightParen => {
+                indentation -= 1;
+                if indentation == 0 {
+                    build_state.current_index += 1;
+                    break;
+                }
+            }
+            _ => {}
+        }
+        build_state.current_index += 1;
+    }
+}
+
 /// Builds non expressions which are not function calls (can include one in parens)
 /// Uses the shunting yard algorithm
-fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens: bool) -> Result<Box<ASTNode>, ParserError> {
+fn build_non_function_call_expression(build_state: &mut ASTBuildState, terminal_tokens: &[Token]) -> Result<Box<ASTNode>, ParserError> {
     let mut expr_stack: Vec<Box<ASTNode>> = vec![];
     let mut operator_stack: Vec<Box<Token>> = vec![];
     
 
     while let Some(current_token) = build_state.tokens.get(build_state.current_index) {
-        if is_expression_terminal_token(&current_token) {
+        if terminal_tokens.contains(&current_token) {
             break;
         }
         match current_token {
@@ -244,12 +246,9 @@ fn build_non_function_call_expression(build_state: &mut ASTBuildState, in_parens
             }
             Token::LeftParen => {
                 build_state.current_index += 1;
-                expr_stack.push(build_expression_recursive(build_state, true)?)
+                expr_stack.push(build_expression_recursive(build_state, &get_parens_expression_terminal_tokens())?)
             },
             Token::RightParen => {
-                if in_parens {
-                    break;
-                }
                 return Err(ParserError{
                     kind: ParserErrorKind::UnexpectedToken,
                     token: current_token.to_owned()
@@ -346,12 +345,16 @@ fn is_operator(token: &Token) -> bool {
     BinaryExpressionType::try_from(token).is_ok() || UnaryExpressionType::try_from(token).is_ok()
 }
 
-/// Returns whether the token terminates the expression
-fn is_expression_terminal_token(token: &Token) -> bool {
-    match token {
-        Token::Eof | Token::NewLine | Token::Unknown | Token::RightCurlyBracket => true,
-        _ => false
-    }
+fn get_default_expression_terminal_tokens() -> [Token;4] {
+    [Token::Eof, Token::NewLine, Token::Unknown, Token::RightCurlyBracket]
+}
+
+fn get_parens_expression_terminal_tokens() -> [Token;4] {
+    [Token::Eof, Token::RightParen, Token::Unknown, Token::RightCurlyBracket]
+}
+
+fn get_in_parens_expression_terminal_tokens() -> [Token;3] {
+    [Token::Eof, Token::Unknown, Token::RightCurlyBracket]
 }
 
 /// Builds an AST statement 
