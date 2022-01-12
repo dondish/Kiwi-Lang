@@ -70,6 +70,7 @@ pub enum ASTNode {
     UnaryExpression { expression_type: UnaryExpressionType, argument: Box<ASTNode> }, // A unary expression
     BinaryExpression { expression_type: BinaryExpressionType, left_argument: Box<ASTNode>, right_argument: Box<ASTNode>}, // A binary expression
     FunctionCall { function: Box<ASTNode>, function_arguments: Vec<Box<ASTNode>>}, // Function call
+    ReturnStatement { expression: Box<ASTNode> }, // return statement 
     CodeBlock { lines: Vec<Box<ASTNode>> }, // Multiple Statements
     FunctionDefinition { function_name: Box<ASTNode>, function_arguments: Vec<Box<ASTNode>>, function_code: Box<ASTNode>}
 }
@@ -117,20 +118,16 @@ pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, ParserError> {
     while build_state.current_index < tokens.len() {
         match &tokens[build_state.current_index] {
             Token::Space | Token::NewLine => build_state.current_index += 1,
-            Token::Identifier(_)  => {
-                let statement = build_statement(&mut build_state)?;
-                build_state.root_nodes.push(statement)
-            },
             Token::Define => {
                 build_state.current_index += 1;
                 let function_definition = build_function(&mut build_state)?;
                 build_state.root_nodes.push(function_definition);
             }
             ,
-            token @ _ => return Err(ParserError { 
-                kind: ParserErrorKind::UnexpectedToken,
-                token: token.to_owned()
-            })
+            token @ _ => {
+                let statement = build_statement(&mut build_state)?;
+                build_state.root_nodes.push(statement)
+            }
         }
     }
 
@@ -358,8 +355,24 @@ fn get_in_parens_expression_terminal_tokens() -> [Token;3] {
 }
 
 /// Builds an AST statement 
-fn build_statement(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
-    unimplemented!();
+fn build_statement(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
+    skip_over_whitespaces(build_state);
+
+    if let Some(current_token) = build_state.tokens.get(build_state.current_index) {
+        if let Token::Return = current_token {
+            build_state.current_index += 1;
+            Ok(Box::new(ASTNode::ReturnStatement { 
+                expression: build_expression(build_state)?
+            }))
+        } else {
+            build_expression(build_state)
+        }
+    } else {
+        Err(ParserError {
+            kind: ParserErrorKind::EmptyExpression,
+            token: Token::Eof
+        })
+    }
 }
 
 /// Builds an AST function
@@ -382,13 +395,17 @@ fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
 mod tests {
     use crate::{tokenizer::Token, parser::{UnaryExpressionType, BinaryExpressionType}};
 
-    use super::{build_expression, ASTBuildState, ASTNode, ParserError};
+    use super::{build_expression, ASTBuildState, ASTNode, ParserError, build_statement};
 
     fn get_expression_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, ParserError> {
         let mut build_state = ASTBuildState::new(&tokens);
         build_expression(&mut build_state)
     }
 
+    fn get_statement_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, ParserError> {
+        let mut build_state = ASTBuildState::new(&tokens);
+        build_statement(&mut build_state)
+    }
 
     #[test]
     /// Tests basic binary operator: a + b
@@ -724,5 +741,66 @@ mod tests {
             ),
             "Failed Chain calls: f (g a) b"
         )
+    }
+
+
+    #[test]
+    /// Basic expression statement: a + b
+    fn basic_expression_statement() {
+        let expression = get_statement_from_tokens(&vec![Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]); // a + b
+        
+        assert_eq!(
+            expression, 
+            Ok(
+                Box::new(
+                    ASTNode::BinaryExpression {
+                        expression_type: BinaryExpressionType::Add,
+                        left_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("a".to_string())
+                            )
+                        ),
+                        right_argument: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("b".to_string())
+                            )
+                        )
+                    }
+                )
+            ),
+            "Failed Basic expression statement: a + b: a + b"
+        );
+    }
+
+    #[test]
+    /// Basic expression in return statement: return a + b
+    fn basic_return_statement() {
+        let expression = get_statement_from_tokens(&vec![Token::Return, Token::Space, Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string())]); // a + b
+        
+        assert_eq!(
+            expression, 
+            Ok(
+                Box::new(
+                    ASTNode::ReturnStatement {
+                        expression: Box::new(
+                            ASTNode::BinaryExpression {
+                                expression_type: BinaryExpressionType::Add,
+                                left_argument: Box::new(
+                                    ASTNode::Identifier(
+                                        Token::Identifier("a".to_string())
+                                    )
+                                ),
+                                right_argument: Box::new(
+                                    ASTNode::Identifier(
+                                        Token::Identifier("b".to_string())
+                                    )
+                                )
+                            }
+                        )
+                    }
+                )
+            ),
+            "Failed Basic expression statement: return a + b"
+        );
     }
 }
