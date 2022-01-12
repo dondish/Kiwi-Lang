@@ -680,4 +680,49 @@ mod tests {
             "Failed nested parenthesis: (a+b+(c-d))+e"
         )
     }
+
+    #[test]
+    /// Chain calls: f (g a) b
+    fn chain_calls() {
+        let expression = get_expression_from_tokens(&vec![Token::Identifier("f".to_string()), Token::Space, Token::LeftParen, Token::Identifier("g".to_string()), Token::Space, Token::Identifier("a".to_string()), Token::RightParen, Token::Space, Token::Identifier("b".to_string())]);
+
+        assert_eq!(
+            expression,
+            Ok(
+                Box::new(
+                    ASTNode::FunctionCall {
+                        function: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("f".to_string())
+                            )
+                        ),
+                        function_arguments: vec![
+                            Box::new(
+                                ASTNode::FunctionCall {
+                                    function: Box::new(
+                                        ASTNode::Identifier(
+                                            Token::Identifier("g".to_string())
+                                        )
+                                    ),
+                                    function_arguments: vec![
+                                        Box::new(
+                                            ASTNode::Identifier(
+                                                Token::Identifier("a".to_string())
+                                            )
+                                        )
+                                    ]
+                                }
+                            ),
+                            Box::new(
+                                ASTNode::Identifier(
+                                    Token::Identifier("b".to_string())
+                                )
+                            )
+                        ]
+                    }
+                )
+            ),
+            "Failed Chain calls: f (g a) b"
+        )
+    }
 }
