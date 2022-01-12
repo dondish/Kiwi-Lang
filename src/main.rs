@@ -44,9 +44,9 @@ fn main() {
 
 
     println!("------------- Tokens -------------");
-    println!("{:?}", tokens);
+    println!("{:#?}", tokens);
     println!();
     println!();
     println!("------------- AST -------------");
-    println!("{:?}", ast);
+    println!("{:#?}", ast);
 }

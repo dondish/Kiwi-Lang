@@ -9,7 +9,7 @@ pub enum Associativity {
 }
 
 /// Unary Expression Type like ! and ~
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UnaryExpressionType {
     Not, // !
 }
@@ -29,7 +29,7 @@ impl <'a> TryFrom<&'a Token> for UnaryExpressionType {
 }
 
 /// Binary Expression Type like + or -
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BinaryExpressionType {
     Add, // +
     Subtract, // -
@@ -63,7 +63,7 @@ impl <'a> TryFrom<&'a Token> for BinaryExpressionType {
 }
 
 /// An enumeration of nodes in the AST
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ASTNode {
     Literal(Token), // Any type of literal
     Identifier(Token), // An identifier
@@ -102,7 +102,8 @@ pub enum ParserErrorKind {
     EmptyExpression,
     InvalidNumberOfOperatorParameters,
     InvalidUnaryOperatorToken,
-    InvalidBinaryOperatorToken
+    InvalidBinaryOperatorToken,
+    InvalidFunctionSignature
 }
 
 #[derive(Debug, PartialEq)]
@@ -119,12 +120,11 @@ pub fn build_ast(tokens: &Vec<Token>) -> Result<AST, ParserError> {
         match &tokens[build_state.current_index] {
             Token::Space | Token::NewLine => build_state.current_index += 1,
             Token::Define => {
-                build_state.current_index += 1;
                 let function_definition = build_function(&mut build_state)?;
                 build_state.root_nodes.push(function_definition);
             }
             ,
-            token @ _ => {
+             _ => {
                 let statement = build_statement(&mut build_state)?;
                 build_state.root_nodes.push(statement)
             }
@@ -376,18 +376,99 @@ fn build_statement(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, Pars
 }
 
 /// Builds an AST function
-fn build_function(_build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
-    unimplemented!();
+fn build_function(build_state: &mut ASTBuildState) -> Result<Box<ASTNode>, ParserError> {
+    verify_starts_with_define(build_state)?;
+    build_state.current_index += 1;
+
+    let (function_name, function_arguments) = build_function_signature(build_state)?;
+    build_state.current_index += 1;
+
+    let mut statements = vec![];
+
+    let mut indentation = 1;
+
+    while let Some(current_token) = build_state.tokens.get(build_state.current_index) {
+        match current_token {
+            Token::LeftCurlyBracket => indentation += 1,
+            Token::RightCurlyBracket => {
+                indentation -= 1;
+                if indentation == 0 {
+                    build_state.current_index += 1;
+                    break;
+                }
+            }
+            _ => statements.push(build_statement(build_state)?)
+        }
+        build_state.current_index += 1;
+        skip_over_whitespaces(build_state);
+    }
+
+    Ok(
+        Box::new(
+            ASTNode::FunctionDefinition {
+                function_name: function_name,
+                function_arguments: function_arguments,
+                function_code: Box::new(
+                    ASTNode::CodeBlock {
+                        lines: statements
+                    }
+                )
+            }
+        )
+    )
+}
+
+fn verify_starts_with_define(build_state: &mut ASTBuildState) -> Result<(), ParserError> {
+    if let Some(Token::Define) = build_state.tokens.get(build_state.current_index) {
+        Ok(())
+    } else {
+        Err(
+            ParserError {
+                kind: ParserErrorKind::InvalidFunctionSignature,
+                token: build_state.tokens.get(build_state.current_index).unwrap_or(&Token::Eof).to_owned()
+            }
+        )
+    }
+}
+
+fn build_function_signature(build_state: &mut ASTBuildState) -> Result<(Box<ASTNode>, Vec<Box<ASTNode>>), ParserError> {
+    let mut arguments: Vec<Box<ASTNode>> = vec![];
+
+    skip_over_whitespaces(build_state);
+
+    while let Some(current_token) = build_state.tokens.get(build_state.current_index) {
+        match current_token {
+            Token::Identifier(_) => arguments.push(Box::new(ASTNode::Identifier(current_token.to_owned()))),
+            Token::LeftCurlyBracket => break,
+            _ => return Err(
+                ParserError {
+                    kind: ParserErrorKind::UnexpectedToken,
+                    token: current_token.to_owned()
+                }
+            )
+        }
+        build_state.current_index += 1;
+        skip_over_whitespaces(build_state);
+    }
+
+    if arguments.len() == 0 {
+        Err(
+            ParserError {
+                kind: ParserErrorKind::InvalidFunctionSignature,
+                token: build_state.tokens.get(build_state.current_index).unwrap_or(&Token::Eof).to_owned()
+            }
+        )
+    } else {
+        Ok(
+            (arguments.first().unwrap().to_owned(), arguments[1..].to_vec())
+        )
+    }
 }
 
 /// Increments the build state's index until it no longer points on a white-space token
 fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
-    while build_state.current_index < build_state.tokens.len() {
-        if let Token::NewLine | Token::Space = build_state.tokens[build_state.current_index] {
-            build_state.current_index += 1;
-        } else {
-            return;
-        }
+    while let Some(Token::NewLine | Token::Space) = build_state.tokens.get(build_state.current_index) {
+        build_state.current_index += 1;
     }
 }
 
@@ -395,7 +476,7 @@ fn skip_over_whitespaces(build_state: &mut ASTBuildState) {
 mod tests {
     use crate::{tokenizer::Token, parser::{UnaryExpressionType, BinaryExpressionType}};
 
-    use super::{build_expression, ASTBuildState, ASTNode, ParserError, build_statement};
+    use super::{build_expression, ASTBuildState, ASTNode, ParserError, build_statement, build_function};
 
     fn get_expression_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, ParserError> {
         let mut build_state = ASTBuildState::new(&tokens);
@@ -405,6 +486,11 @@ mod tests {
     fn get_statement_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, ParserError> {
         let mut build_state = ASTBuildState::new(&tokens);
         build_statement(&mut build_state)
+    }
+
+    fn get_function_from_tokens(tokens: &Vec<Token>) -> Result<Box<ASTNode>, ParserError> {
+        let mut build_state = ASTBuildState::new(&tokens);
+        build_function(&mut build_state)
     }
 
     #[test]
@@ -802,5 +888,181 @@ mod tests {
             ),
             "Failed Basic expression statement: return a + b"
         );
+    }
+
+    #[test]
+    /// Basic function definition: def f {}
+    fn basic_function_definition() {
+        let function = get_function_from_tokens(&vec![Token::Define, Token::Space, Token::Identifier("f".to_string()), Token::Space, Token::LeftCurlyBracket, Token::RightCurlyBracket]);
+
+        assert_eq!(
+            function,
+            Ok(
+                Box::new(
+                    ASTNode::FunctionDefinition {
+                        function_name: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("f".to_string())
+                            )
+                        ),
+                        function_arguments: vec![],
+                        function_code: Box::new(
+                            ASTNode::CodeBlock {
+                                lines: vec![]
+                            }
+                        )
+                    }
+                )
+            ),
+            "Failed function definition: def f {{}}"
+        )
+    }
+
+    #[test]
+    /// Basic function with arguments: def f a b {}
+    fn basic_function_with_arguments() {
+        let function = get_function_from_tokens(&vec![Token::Define, Token::Space, Token::Identifier("f".to_string()), Token::Space, Token::Identifier("a".to_string()), Token::Space, Token::Identifier("b".to_string())]);
+
+        assert_eq!(
+            function,
+            Ok(
+                Box::new(
+                    ASTNode::FunctionDefinition {
+                        function_name: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("f".to_string())
+                            )
+                        ),
+                        function_arguments: vec![
+                            Box::new(
+                                ASTNode::Identifier(
+                                    Token::Identifier("a".to_string())
+                                )
+                            ),
+                            Box::new(
+                                ASTNode::Identifier(
+                                    Token::Identifier("b".to_string())
+                                )
+                            )
+                        ],
+                        function_code: Box::new(
+                            ASTNode::CodeBlock {
+                                lines: vec![]
+                            }
+                        )
+                    }
+                )
+            ),
+            "Basic function with arguments: def f a b {{}}"
+        )
+    }
+
+    #[test]
+    /// Basic function with code: def f {return a + b}
+    fn basic_function_with_code() {
+        let function = get_function_from_tokens(&vec![Token::Define, Token::Space, Token::Identifier("f".to_string()), Token::Space, Token::LeftCurlyBracket, Token::Return, Token::Space, Token::Identifier("a".to_string()), Token::Plus, Token::Identifier("b".to_string()), Token::RightCurlyBracket]);
+
+        assert_eq!(
+            function,
+            Ok(
+                Box::new(
+                    ASTNode::FunctionDefinition {
+                        function_name: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("f".to_string())
+                            )
+                        ),
+                        function_arguments: vec![],
+                        function_code: Box::new(
+                            ASTNode::CodeBlock {
+                                lines: vec![
+                                    Box::new(
+                                        ASTNode::ReturnStatement {
+                                            expression: Box::new(
+                                                ASTNode::BinaryExpression {
+                                                    expression_type: BinaryExpressionType::Add,
+                                                    left_argument: Box::new(
+                                                        ASTNode::Identifier(
+                                                            Token::Identifier("a".to_string())
+                                                        )
+                                                    ),
+                                                    right_argument: Box::new(
+                                                        ASTNode::Identifier(
+                                                            Token::Identifier("b".to_string())
+                                                        )
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    )
+                                ]
+                            }
+                        )
+                    }
+                )
+            ),
+            "Failed Basic function with code: def f {{return a + b}}"
+        )
+    }
+
+    #[test]
+    /// Basic function with multiline code: 
+    /// def f {
+    ///     name = "Oded"
+    ///     return name
+    /// }
+    fn basic_function_with_multiline_code() {
+        let function = get_function_from_tokens(&vec![Token::Define, Token::Space, Token::Identifier("f".to_string()), Token::Space, Token::LeftCurlyBracket, Token::Identifier("name".to_string()), Token::Assign, Token::StringLiteral("Oded".to_string()), Token::NewLine, Token::Return, Token::Identifier("name".to_string()), Token::RightCurlyBracket]);
+
+        assert_eq!(
+            function,
+            Ok(
+                Box::new(
+                    ASTNode::FunctionDefinition {
+                        function_name: Box::new(
+                            ASTNode::Identifier(
+                                Token::Identifier("f".to_string())
+                            )
+                        ),
+                        function_arguments: vec![],
+                        function_code: Box::new(
+                            ASTNode::CodeBlock {
+                                lines: vec![
+                                    Box::new(
+                                        ASTNode::BinaryExpression {
+                                            expression_type: BinaryExpressionType::Assign,
+                                            left_argument: Box::new(
+                                                ASTNode::Identifier(
+                                                    Token::Identifier("name".to_string())
+                                                )
+                                            ),
+                                            right_argument: Box::new(
+                                                ASTNode::Literal(
+                                                    Token::StringLiteral("Oded".to_string())
+                                                )
+                                            )
+                                        }
+                                    ),
+                                    Box::new(
+                                        ASTNode::ReturnStatement {
+                                            expression: Box::new(
+                                                ASTNode::Identifier(
+                                                    Token::Identifier("name".to_string())
+                                                )
+                                            )
+                                        }
+                                    )
+                                ]
+                            }
+                        )
+                    }
+                )
+            ),
+            r#"Failed Basic function with multiline code: 
+             def f {{
+                 name = "Oded"
+                 return name
+             }}"#
+        )
     }
 }
