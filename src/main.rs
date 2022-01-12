@@ -10,6 +10,10 @@ fn get_all_tokens(input: &str) -> Result<Vec<Token>, Err<Error<&str>>> {
 
     while curr_input.len() > 0 {
         match parse_token(curr_input) {
+            Ok((_, Token::Eof)) => {
+                v.push(Token::Eof);
+                break;
+            }
             Ok((rest, token)) => {
                 v.push(token); 
                 curr_input = rest
