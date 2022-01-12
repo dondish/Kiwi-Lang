@@ -102,7 +102,7 @@ pub enum ASTNode {
 /// An Abstract Syntax Tree
 #[derive(Debug)]
 pub struct AST {
-    root_nodes: Vec<Box<ASTNode>>
+    pub root_nodes: Vec<Box<ASTNode>>
 }
 
 /// AST Build State
