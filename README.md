@@ -27,7 +27,7 @@ def main {
         print "1 is equal to 2"
     }
 
-    print string  // Calling methods without parens, parens are for tuples
+    print string  // Calling methods without parens, parens are for tuples / grouping
     hello_name "Oded" | print  // Chaining, prints "Hello Oded" 
 }
 ```
