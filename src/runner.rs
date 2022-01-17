@@ -1,21 +1,25 @@
-use std::{collections::HashMap, ops::{Add, Sub}};
+use std::{collections::HashMap, ops::{Add, Sub, Not}};
 
-use crate::parser::{AST, ASTNode, BinaryExpressionType};
+use crate::parser::{AST, ASTNode, BinaryExpressionType, LiteralKind, UnaryExpressionType};
 
+#[warn(dead_code)]
 pub struct Runner {
-    ast: AST,
     functions: HashMap<String, ASTNode>,
     variables: Vec<HashMap<String, Value>>
 }
 
+#[derive(Debug)]
 pub struct RunError {
     pub kind: RunErrorKind
 }
+
+#[derive(Debug)]
 pub enum RunErrorKind {
     UndefinedVariable,
     InvalidOperation
 }
 
+#[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
     Float(f64),
@@ -113,9 +117,53 @@ impl ToString for Value {
     }
 }
 
+impl From<i64> for Value {
+    fn from(i: i64) -> Self {
+        Value::Int(i)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(f: f64) -> Self {
+        Value::Float(f)
+    }
+}
+
+impl From<String> for Value {
+    fn from(str: String) -> Self {
+        Value::String(str)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        Value::Int(if b { 1 } else { 0 })
+    }
+}
+
+impl Not for &Value {
+    type Output = Result<Value, RunError>;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Value::Int(i) => Ok((i.to_owned() == 0).into()),
+            Value::Float(f) => Ok((f.to_owned() == 0.).into()),
+            Value::String(s) => Ok((s == "").into()),
+            Value::Identifier(_) => Err(RunError {
+                kind: RunErrorKind::InvalidOperation
+            })
+
+        }
+    }
+}
+
 impl Runner {
-    pub fn run(self: &mut Runner) -> Result<(), RunError {
-        for node in self.ast.root_nodes {
+    pub fn new() -> Self {
+        Self { functions: HashMap::new(), variables: vec![HashMap::new()] }
+    }
+
+    pub fn run(self: &mut Runner, ast: &AST) -> Result<(), RunError> {
+        for node in &ast.root_nodes {
             self.run_node(node.as_ref())?;
         }
         Ok(())
@@ -124,17 +172,43 @@ impl Runner {
     fn run_node(self: &mut Runner, node: &ASTNode) -> Result<Value, RunError> {
         match node {
             ASTNode::BinaryExpression { expression_type, left_argument, right_argument} => {
-                let left_value = self.run_node(left_argument)?;
-                let right_value = self.run_node(right_argument)?;
-
-                self.evaluate_binary_expression(expression_type, &left_value, &right_value)
+                let left_node = &self.run_node(left_argument)?;
+                let right_node = &self.run_node(right_argument)?;
+                self.evaluate_binary_expression(expression_type, left_node, right_node)
             },
-            ASTNode::CodeBlock {lines} => {
-                for line in lines {
-                    if let ASTNode::ReturnStatement = 
-                    self.run_node(line.as_ref())?;
-                }
-            }
+            ASTNode::CodeBlock {lines} => self.evaluate_code_block(lines),
+            ASTNode::FunctionCall { function_arguments, .. } => {
+                println!("{}", function_arguments
+                    .iter()
+                    .map(|node| self.run_node(node))
+                    .map(|val| val.map(|v| self.ensure_not_identifier(&v).map(|v| v.to_owned())))
+                    .map(|node| node.map(|n| n.to_string()))
+                    .collect::<Result<Vec<_>,_>>()?
+                    .join(" ")
+                );
+                Ok(Value::Int(0))
+            },
+            ASTNode::FunctionDefinition { .. } => {
+                Err(RunError {
+                    kind: RunErrorKind::InvalidOperation
+                })
+            },
+            ASTNode::Identifier(str) => Ok(Value::Identifier(str.to_owned())),
+            ASTNode::Literal(kind) => Ok(match kind {
+                LiteralKind::IntLiteral(i) => Value::Int(i.to_owned()),
+                LiteralKind::StringLiteral(str) => Value::String(str.to_owned()),
+                LiteralKind::FloatLiteral(float) => Value::Float(float.to_owned())
+            }),
+
+            ASTNode::UnaryExpression { expression_type, argument } => {
+                let argument_value = &self.run_node(argument)?;
+
+                self.evaluate_unary_expression(expression_type, argument_value)
+            },
+            _ => Err(RunError{
+                kind: RunErrorKind::InvalidOperation
+            })
+
         }
     }
 
@@ -142,22 +216,22 @@ impl Runner {
         match expression_type {
             BinaryExpressionType::Add => {
                 let left_argument_ensured = self.ensure_not_identifier(left_argument)?;
-                let right_argument_ensured = self.ensure_not_identifier(left_argument)?;
+                let right_argument_ensured = self.ensure_not_identifier(right_argument)?;
 
                 left_argument_ensured + right_argument_ensured
             },
             BinaryExpressionType::Subtract => {
                 let left_argument_ensured = self.ensure_not_identifier(left_argument)?;
-                let right_argument_ensured = self.ensure_not_identifier(left_argument)?;
+                let right_argument_ensured = self.ensure_not_identifier(right_argument)?;
 
                 left_argument_ensured - right_argument_ensured
             },
             BinaryExpressionType::Assign => {
                 if let Value::Identifier(ident) = left_argument {
-                    let right_argument_ensured = self.ensure_not_identifier(left_argument)?;
+                    let right_argument_ensured = self.ensure_not_identifier(right_argument)?.to_owned();
 
-                    self.set_variable(ident, right_argument_ensured);
-                    Ok(right_argument)
+                    self.set_variable(ident.to_owned(), right_argument_ensured.clone());
+                    Ok(right_argument_ensured)
                 } else {
                     Err(RunError {
                         kind: RunErrorKind::InvalidOperation
@@ -165,6 +239,26 @@ impl Runner {
                 }
             }
         }
+    }
+
+    fn evaluate_unary_expression(self: &mut Runner, expression_type: &UnaryExpressionType, argument: &Value) -> Result<Value, RunError> {
+        match expression_type {
+            UnaryExpressionType::Not => {
+                let left_argument_ensured = self.ensure_not_identifier(argument)?;
+
+                !left_argument_ensured
+            }
+        }
+    }
+
+    fn evaluate_code_block(self: &mut Runner, lines: &Vec<Box<ASTNode>>) -> Result<Value, RunError> {
+        for line in lines {
+            if let ASTNode::ReturnStatement {expression} = line.as_ref() {
+                return self.run_node(expression);
+            }
+            self.run_node(line.as_ref())?;
+        }
+        Ok(Value::Int(0))
     }
 
     fn lookup_variable(self: &Runner, identifier: &String) -> Option<&Value> {

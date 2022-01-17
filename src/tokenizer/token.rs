@@ -1,6 +1,6 @@
 
 use nom::{
-    character::{streaming::{space1, line_ending, char}, streaming::{anychar, one_of}}, branch::alt, combinator::{map, eof, recognize, opt, map_res, value}, IResult, bytes::{streaming::tag, streaming::take_while1}, sequence::{tuple, terminated, preceded}, multi::{many1, many0}
+    character::{complete::{space1, line_ending, char}, complete::{anychar, one_of}}, branch::alt, combinator::{map, eof, recognize, opt, map_res, value}, IResult, bytes::{complete::tag, complete::take_while1}, sequence::{tuple, terminated, preceded}, multi::{many1, many0}
 };
 
 use std::str::FromStr;

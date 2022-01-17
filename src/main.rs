@@ -1,4 +1,5 @@
 use kiwi_lang::parser::build_ast;
+use kiwi_lang::runner::Runner;
 use kiwi_lang::tokenizer::{Token, parse_token};
 use nom::error::Error;
 use nom::Err;
@@ -28,21 +29,29 @@ fn get_all_tokens(input: &str) -> Result<Vec<Token>, Err<Error<&str>>> {
 }
 
 fn main() {
+    // let code = r#"
+    // def hello_name name {
+    //     return "Hello " + name
+    // }
+    
+    // def main {
+    //     integer = 1
+    //     floating_point = 2.53
+    //     string = "Hello World!"
+    
+    //     print string
+    // }"#;
     let code = r#"
-    def hello_name name {
-        return "Hello " + name
-    }
-    
-    def main {
-        integer = 1
-        floating_point = 2.53
-        string = "Hello World!"
-    
-        print string
-    }"#;
+        x = "Circumference of circle with radius 5: "
+
+        pi = 3.141592653589
+        radius = 5
+
+        print x 3 + 5
+    "#.trim();
     let tokens = get_all_tokens(code).unwrap();
     let ast = build_ast(&tokens).unwrap();
-
+    let mut runner = Runner::new();
 
     println!("------------- Code -------------");
     println!("{}", code);
@@ -52,5 +61,10 @@ fn main() {
     println!();
     println!();
     println!("------------- AST -------------");
-    println!("{:#?}", ast);
+    println!("{:#?}", &ast);
+    println!();
+    println!("------------- Run -------------");
+    runner.run(&ast).map_err(|e| {
+        println!("{:#?}", e.kind)
+    });
 }
