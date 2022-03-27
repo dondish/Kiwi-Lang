@@ -180,6 +180,10 @@ impl <'runner> Runner<'runner> {
         for node in &ast.root_nodes {
             self.run_node(node.as_ref())?;
         }
+        if let Some(function) = self.functions.get("main") { // Evaluate main function
+            let function = *function;
+            self.evaluate_function_body(function, &vec![])?;
+        }
         Ok(())
     }
 

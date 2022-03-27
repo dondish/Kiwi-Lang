@@ -49,7 +49,6 @@ fn main() {
         print string integer + floating_point
         print (hello_name "Oded")
     }
-    main
     "#;
     // let code = r#"
     //     x = "Circumference of circle with radius 5: "
