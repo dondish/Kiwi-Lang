@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use kiwi_lang::parser::build_ast;
-use kiwi_lang::runner::Runner;
+use kiwi_lang::runner::{Runner, Value, RunError, ExternalFunction};
 use kiwi_lang::tokenizer::{Token, parse_token};
 use nom::error::Error;
 use nom::Err;
@@ -28,30 +30,39 @@ fn get_all_tokens(input: &str) -> Result<Vec<Token>, Err<Error<&str>>> {
     Ok(v)
 }
 
+fn print(args: &Vec<Value>) -> Result<Value, RunError> {
+    println!("{}", args.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" "));
+    Ok(Value::Int(0))
+}
+
 fn main() {
-    // let code = r#"
-    // def hello_name name {
-    //     return "Hello " + name
-    // }
-    
-    // def main {
-    //     integer = 1
-    //     floating_point = 2.53
-    //     string = "Hello World!"
-    
-    //     print string
-    // }"#;
     let code = r#"
-        x = "Circumference of circle with radius 5: "
+    def hello_name name {
+        return "Hello " + name
+    }
+    
+    def main {
+        integer = 1
+        floating_point = 2.53
+        string = "Hello World!"
+    
+        print string integer + floating_point
+        print (hello_name "Oded")
+    }
+    main
+    "#;
+    // let code = r#"
+    //     x = "Circumference of circle with radius 5: "
 
-        pi = 3.141592653589
-        radius = 5
+    //     pi = 3.141592653589
+    //     radius = 5
 
-        print x 3 + 5
-    "#.trim();
+    //     print x 3 + 5
+    // "#.trim();
     let tokens = get_all_tokens(code).unwrap();
     let ast = build_ast(&tokens).unwrap();
-    let mut runner = Runner::new();
+    let external_functions = HashMap::from([("print".to_owned(), print as ExternalFunction)]);
+    let mut runner = Runner::new(&external_functions);
 
     println!("------------- Code -------------");
     println!("{}", code);
@@ -64,7 +75,8 @@ fn main() {
     println!("{:#?}", &ast);
     println!();
     println!("------------- Run -------------");
-    runner.run(&ast).map_err(|e| {
-        println!("{:#?}", e.kind)
-    });
+    match runner.run(&ast) {
+        Err(e) => println!("{:#?}", e.kind),
+        _ => {}
+    }
 }
